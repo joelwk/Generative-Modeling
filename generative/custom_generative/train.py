@@ -55,7 +55,7 @@ def train_model(preload_model=False, model_path=None, use_sinusoidal=False, retu
             key_dim, 
             embedding_dim, 
             ff_dim, 
-            dropout_rate=dropout_rate,  # Add this line
+            dropout_rate=dropout_rate, 
             epsilon=float(epsilon), 
             activation=activation
         )(x, return_attention_scores=return_attention_scores)

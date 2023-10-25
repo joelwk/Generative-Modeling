@@ -35,7 +35,7 @@ def positional_encoding(position, d_model):
     return tf.cast(pos_encoding, dtype=tf.float32)
 
 class FeedForwardNetwork(layers.Layer):
-    def __init__(self, ff_dim, activation="relu", **kwargs):
+    def __init__(self, ff_dim, activation=activation, **kwargs):
         super(FeedForwardNetwork, self).__init__(**kwargs)
         self.ffn_1 = layers.Dense(ff_dim, activation=activation)
         self.ffn_2 = layers.Dense(ff_dim)
@@ -50,7 +50,7 @@ class TransformerBlock(layers.Layer):
         self.embed_dim = embed_dim
         self.ff_dim = ff_dim
         self.dropout_rate = dropout_rate
-        self.epsilon = epsilon  # Make sure this line exists
+        self.epsilon = epsilon 
         self.activation = activation
         self.dropout_rate = dropout_rate
         self.attn = layers.MultiHeadAttention(num_heads, key_dim, output_shape=embed_dim)
@@ -63,7 +63,6 @@ class TransformerBlock(layers.Layer):
     @tf.function 
     def call(self, inputs, attention_mask=None, return_attention_scores=False):
         attention_output, attention_scores = self.attn(
-            
             inputs, inputs, attention_mask=attention_mask, return_attention_scores=True
         )
         attention_output = self.dropout_1(attention_output)
@@ -89,9 +88,7 @@ class TransformerBlock(layers.Layer):
         })
         return config
         
-# Original TokenAndPositionEmbedding class definition
 class TokenAndPositionEmbedding(layers.Layer):
-    
     def __init__(self, max_len, vocab_size, embed_dim, use_sinusoidal=False, initializer="glorot_uniform", **kwargs):
         super(TokenAndPositionEmbedding, self).__init__(**kwargs)
         self.max_len = max_len
@@ -102,6 +99,7 @@ class TokenAndPositionEmbedding(layers.Layer):
         self.token_emb = layers.Embedding(input_dim=vocab_size, output_dim=embed_dim, embeddings_initializer=initializer)
         if not use_sinusoidal:
             self.pos_emb = layers.Embedding(input_dim=max_len, output_dim=embed_dim, embeddings_initializer=initializer)
+
     @tf.function
     def call(self, x):
         maxlen = tf.shape(x)[-1]
@@ -122,14 +120,12 @@ class TokenAndPositionEmbedding(layers.Layer):
             'initializer': self.initializer
         })
         return config
-# Initialize the TokenAndPositionEmbedding layer with the get_config method defined
+
 token_and_position_embedding = TokenAndPositionEmbedding(
     max_len=max_len,
     vocab_size=vocab_size,
     embed_dim=embedding_dim
 )
-
-# Initialize the TransformerBlock layer with the get_config method defined
 transformer_block = TransformerBlock(
     num_heads=num_heads,
     key_dim=key_dim,
@@ -137,10 +133,8 @@ transformer_block = TransformerBlock(
     ff_dim=ff_dim,
     dropout_rate=dropout_rate,
     epsilon=epsilon,
-    activation=activation # Replace with the activation function you intend to use
+    activation=activation 
 )
-
-# Initialize the FeedForwardNetwork layer (assuming you've also defined a get_config method for it)
 feed_forward_network = FeedForwardNetwork(
     ff_dim=ff_dim
 )
