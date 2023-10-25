@@ -2,7 +2,7 @@ import tensorflow as tf
 from tensorflow.keras.models import load_model
 from tensorflow.keras.utils import custom_object_scope
 import numpy as np
-from generative.tnn import TransformerBlock, TokenAndPositionEmbedding
+from generative.general_generative.tnn import TransformerBlock, TokenAndPositionEmbedding
 import pandas as pd
 import configparser
 import os

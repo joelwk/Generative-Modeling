@@ -5,7 +5,7 @@ import tensorflow as tf
 from tensorflow.keras import layers, models, losses, callbacks
 import traceback
 from tensorflow.keras.models import load_model 
-from generative.tnn import TransformerBlock, TokenAndPositionEmbedding, causal_attention_mask
+from generative.general_generative.tnn import TransformerBlock, TokenAndPositionEmbedding, causal_attention_mask
 
 config = configparser.ConfigParser()
 config.read('./generative/config.ini')

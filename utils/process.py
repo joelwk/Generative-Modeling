@@ -5,8 +5,6 @@ import os
 import pandas as pd
 import logging 
 from utils.fnProcessing import pad_punctuation, remove_urls, remove_whitespace, clean_text
-from generative.tnn import TransformerBlock, TokenAndPositionEmbedding  
-from generative.train import train_model, TrainTextGenerator, CustomSchedule, TrainTextGenerator
 
 config = configparser.ConfigParser()
 config.read('./generative/config.ini')
