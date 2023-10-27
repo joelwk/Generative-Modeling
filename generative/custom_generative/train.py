@@ -4,6 +4,7 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.keras import layers, models, losses, callbacks
 import traceback
+from tensorflow.keras import layers, models, losses
 from tensorflow.keras.models import load_model 
 from generative.custom_generative.tnn import TransformerBlock, TokenAndPositionEmbedding
 
@@ -15,6 +16,7 @@ max_len = int(params['max_len'])
 vocab_size = int(params['vocab_size'])
 embedding_dim = int(params['embedding_dim'])
 num_heads = int(params['n_heads'])
+num_layers = int(params['n_layers'])
 key_dim = int(params['key_dim'])
 ff_dim = int(params['feed_forward_dim'])
 dropout_rate = float(params['dropout'])
@@ -43,29 +45,33 @@ class CustomSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
         }
         return config
 
-def train_model(preload_model=False, model_path=None, use_sinusoidal=False, return_attention_scores=False):
+def train_model(preload_model=False, model_path=None, use_sinusoidal=False, return_attention_scores=False, num_layers=num_layers):
     lr = CustomSchedule(key_dim)
     optimizer = tf.keras.optimizers.Adam(lr, beta_1=0.9, beta_2=0.98, epsilon=1e-9)
+    
     inputs = layers.Input(shape=(None,), dtype=tf.int32)
     x = TokenAndPositionEmbedding(max_len, vocab_size, embedding_dim, use_sinusoidal=use_sinusoidal, initializer="glorot_uniform")(inputs)
+    
     attention_scores_list = []
-    for _ in range(3): 
-        output = TransformerBlock(
+    
+    for _ in range(num_layers):  # Loop through the number of layers
+        x, attention_scores = TransformerBlock(
             num_heads, 
             key_dim, 
             embedding_dim, 
             ff_dim, 
             dropout_rate=dropout_rate, 
             epsilon=float(epsilon), 
-            activation=activation
-        )(x, return_attention_scores=return_attention_scores)
-
+            activation=activation,
+            num_layers=num_layers
+        )(x, return_attention_scores=True)
+        
         if return_attention_scores:
-            x, attention_scores = output
-        else:
-            x = output
+            attention_scores_list.append(attention_scores)
+            
     outputs = layers.Dense(vocab_size, activation="softmax")(x)
     gpt = models.Model(inputs=inputs, outputs=[outputs] + (attention_scores_list if return_attention_scores else []))
+    
     gpt.compile(optimizer=optimizer, loss=[losses.SparseCategoricalCrossentropy()] + ([None]*len(attention_scores_list) if return_attention_scores else []))
     
     if preload_model and model_path:
@@ -79,10 +85,12 @@ def train_model(preload_model=False, model_path=None, use_sinusoidal=False, retu
                 })
             except Exception as e:
                 print(f"Failed to load model. Error: {e}")
-                traceback.print_exc() 
+                traceback.print_exc()
         else:
             print(f"Model path {model_path} does not exist.")
+    
     return gpt
+
 
 class TrainTextGenerator(callbacks.Callback):
     def __init__(self, combined_vocab, top_k=15):

@@ -13,6 +13,7 @@ max_len = int(params['max_len'])
 vocab_size = int(params['vocab_size'])
 embedding_dim = int(params['embedding_dim'])
 num_heads = int(params['n_heads'])
+num_layers =  int(params['n_layers'])
 key_dim = int(params['key_dim'])
 ff_dim = int(params['feed_forward_dim'])
 dropout_rate = float(params['dropout'])
@@ -43,7 +44,7 @@ class FeedForwardNetwork(layers.Layer):
         return self.ffn_2(self.ffn_1(x))
 
 class TransformerBlock(layers.Layer):
-    def __init__(self, num_heads, key_dim, embed_dim, ff_dim, dropout_rate, epsilon, activation, **kwargs):
+    def __init__(self, num_heads, key_dim, embed_dim, ff_dim, dropout_rate, epsilon, activation, num_layers, **kwargs):
         super(TransformerBlock, self).__init__(**kwargs)
         self.num_heads = num_heads
         self.key_dim = key_dim
@@ -52,29 +53,36 @@ class TransformerBlock(layers.Layer):
         self.dropout_rate = dropout_rate
         self.epsilon = epsilon 
         self.activation = activation
-        self.dropout_rate = dropout_rate
+        self.num_layers = num_layers  
+
         self.attn = layers.MultiHeadAttention(num_heads, key_dim, output_shape=embed_dim)
         self.dropout_1 = layers.Dropout(self.dropout_rate)
         self.ln_1 = layers.LayerNormalization(epsilon=epsilon)
-        self.ffn = FeedForwardNetwork(ff_dim, activation)
-        self.dropout_2 = layers.Dropout(self.dropout_rate)
-        self.ln_2 = layers.LayerNormalization(epsilon=epsilon)
-        
+
+        # Initialize multiple FeedForwardNetwork layers based on num_layers
+        self.ffns = [FeedForwardNetwork(ff_dim, activation) for _ in range(self.num_layers)]
+        self.dropouts = [layers.Dropout(self.dropout_rate) for _ in range(self.num_layers)]
+        self.lns = [layers.LayerNormalization(epsilon=epsilon) for _ in range(self.num_layers)]
+
     @tf.function 
     def call(self, inputs, attention_mask=None, return_attention_scores=False):
         attention_output, attention_scores = self.attn(
             inputs, inputs, attention_mask=attention_mask, return_attention_scores=True
         )
         attention_output = self.dropout_1(attention_output)
-        out1 = self.ln_1(inputs + attention_output)
-        ffn_output = self.ffn(out1)
-        ffn_output = self.dropout_2(ffn_output)
-        out2 = self.ln_2(out1 + ffn_output)
-        
+        out = self.ln_1(inputs + attention_output)
+
+        # Forward pass through multiple FeedForwardNetwork layers
+        for i in range(self.num_layers):
+            ffn_output = self.ffns[i](out)
+            ffn_output = self.dropouts[i](ffn_output)
+            out = self.lns[i](out + ffn_output)
+
         if return_attention_scores:
-            return out2, attention_scores
+            return out, attention_scores
         else:
-            return out2
+            return out
+
     def get_config(self):
         config = super().get_config()
         config.update({
@@ -84,9 +92,11 @@ class TransformerBlock(layers.Layer):
             'ff_dim': self.ff_dim,
             'dropout_rate': self.dropout_rate,
             'epsilon': self.epsilon,
-            'activation': self.activation
+            'activation': self.activation,
+            'num_layers': self.num_layers  
         })
         return config
+
         
 class TokenAndPositionEmbedding(layers.Layer):
     def __init__(self, max_len, vocab_size, embed_dim, use_sinusoidal=False, initializer="glorot_uniform", **kwargs):
@@ -133,7 +143,8 @@ transformer_block = TransformerBlock(
     ff_dim=ff_dim,
     dropout_rate=dropout_rate,
     epsilon=epsilon,
-    activation=activation 
+    activation=activation,
+    num_layers=num_layers
 )
 feed_forward_network = FeedForwardNetwork(
     ff_dim=ff_dim
