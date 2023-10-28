@@ -11,10 +11,21 @@ config = configparser.ConfigParser()
 config.read('./generative/config.ini')
 config_params = config['params']
 params = {key: config_params[key] for key in config_params}
+max_len = int(params['max_len'])
+vocab_size = int(params['vocab_size'])
+embedding_dim = int(params['embedding_dim'])
+num_heads = int(params['n_heads'])
+num_layers = int(params['n_layers'])
+key_dim = int(params['key_dim'])
+ff_dim = int(params['feed_forward_dim'])
+dropout_rate = float(params['dropout'])
+warmup_steps = int(params['warmup_steps'])
+activation = params['activation']
+epsilon = 1e-6 
 
 class CustomSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
     "Custom learning rate for Adam optimizer"
-    def __init__(self, key_dim=int(params['key_dim']), warmup_steps=int(params['warmup_steps'])):
+    def __init__(self, key_dim=key_dim, warmup_steps=warmup_steps):
         super().__init__()
         self.key_dim = key_dim
         self.warmup_steps = warmup_steps
@@ -35,16 +46,16 @@ class CustomSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
 
 def train_model(preload_model=False, model_path=None):
 
-    lr = CustomSchedule(int(params['key_dim']))
+    lr = CustomSchedule(key_dim)
     optimizer = tf.keras.optimizers.Adam(lr, beta_1=0.9, beta_2=0.98, epsilon=1e-9)
     inputs = layers.Input(shape=(None,), dtype=tf.int32)
-    x = TokenAndPositionEmbedding(int(params['max_len']), int(params['vocab_size']), int(params['embedding_dim']))(inputs)
+    x = TokenAndPositionEmbedding(max_len, vocab_size, embedding_dim)(inputs)
     attention_scores_list = []
     for _ in range(3): 
-        x, attention_scores = TransformerBlock(int(params['n_heads']), int(params['key_dim']), int(params['embedding_dim']), int(params['feed_forward_dim']))(x)
+        x, attention_scores = TransformerBlock(num_heads,key_dim,embedding_dim, ff_dim)(x)
         attention_scores_list.append(attention_scores)
     
-    outputs = layers.Dense(int(params['vocab_size']), activation="softmax")(x)
+    outputs = layers.Dense(vocab_size, activation="softmax")(x)
     gpt = models.Model(inputs=inputs, outputs=[outputs] + attention_scores_list)
     gpt.compile(optimizer=optimizer, loss=[losses.SparseCategoricalCrossentropy()] + [None]*5)
     if preload_model and model_path:
@@ -107,4 +118,4 @@ class TrainTextGenerator(callbacks.Callback):
             reshaped_atts.append(att[0, :, -1, :])
         return reshaped_atts
     def on_epoch_end(self, epoch, logs=None):
-        self.generate("This year has been", max_tokens=100, temperature=1)
+        self.generate("This year has been", max_tokens=max_len, temperature=1)

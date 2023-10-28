@@ -6,6 +6,22 @@ import tensorflow as tf
 from tensorflow.keras import callbacks, models
 from generative.custom_generative.tnn import TransformerBlock, TokenAndPositionEmbedding
 
+config = configparser.ConfigParser()
+config.read('./generative/config.ini')
+config_params = config['params']
+params = {key: config_params[key] for key in config_params}
+max_len = int(params['max_len'])
+vocab_size = int(params['vocab_size'])
+embedding_dim = int(params['embedding_dim'])
+num_heads = int(params['n_heads'])
+num_layers = int(params['n_layers'])
+key_dim = int(params['key_dim'])
+ff_dim = int(params['feed_forward_dim'])
+dropout_rate = float(params['dropout'])
+warmup_steps = int(params['warmup_steps'])
+activation = params['activation']
+epsilon = 1e-6 
+
 class TextGenerator(callbacks.Callback):
     def __init__(self, model, vocab, top_k=15, generation_type='general', beam_width=3, sampling_type='top_k', top_p=0.9):
         self.model = model
@@ -36,9 +52,8 @@ class TextGenerator(callbacks.Callback):
             sorted_probs = tf.nn.softmax(logits[sorted_indices]).numpy()
             cumulative_probs = np.cumsum(sorted_probs)
             filtered_indices = sorted_indices[cumulative_probs <= self.top_p]
-            filtered_probs = sorted_probs[cumulative_probs <= self.top_p]
-            sample_token, _ = self.sample_from(filtered_probs, temperature)
-            return filtered_indices[sample_token], filtered_probs
+            sample_token, _ = self.sample_from(sorted_probs, temperature)
+            return filtered_indices[sample_token], sorted_probs
 
     def append_info(self, prompt, logits, probs):
         self.info.append({
@@ -49,7 +64,7 @@ class TextGenerator(callbacks.Callback):
 
     def generate(self, start_prompt, max_tokens, temperature=1.0):
         start_tokens = [self.word_to_index.get(word, 1) for word in start_prompt.split()]
-        # Beam search generation
+
         if self.generation_type == 'beam':
             sequences = [[list(start_tokens), 0.0]]
             for _ in range(max_tokens):
@@ -67,7 +82,7 @@ class TextGenerator(callbacks.Callback):
                 sequences = ordered[:self.beam_width]
             generated_tokens = sequences[0][0]
             self.append_info(start_prompt, logits, probs)
-        # Greedy generation
+            
         elif self.generation_type == 'greedy':
             generated_tokens = []
             for _ in range(max_tokens):
@@ -82,7 +97,7 @@ class TextGenerator(callbacks.Callback):
                     break
             self.append_info(start_prompt, logits, probs)
             
-        else: # General generation
+        else:  # general
             for _ in range(max_tokens):
                 x = np.array([start_tokens])
                 logits = self.model.predict(x)[0][-1]

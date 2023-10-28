@@ -5,8 +5,19 @@ from tensorflow.keras import layers
 
 config = configparser.ConfigParser()
 config.read('./generative/config.ini')
-config_params = config["params"]
+config_params = config['params']
 params = {key: config_params[key] for key in config_params}
+max_len = int(params['max_len'])
+vocab_size = int(params['vocab_size'])
+embedding_dim = int(params['embedding_dim'])
+num_heads = int(params['n_heads'])
+num_layers = int(params['n_layers'])
+key_dim = int(params['key_dim'])
+ff_dim = int(params['feed_forward_dim'])
+dropout_rate = float(params['dropout'])
+warmup_steps = int(params['warmup_steps'])
+activation = params['activation']
+epsilon = 1e-6 
 
 class TransformerBlock(layers.Layer):
     def __init__(self, num_heads, key_dim, embed_dim, ff_dim, dropout_rate=0.1, **kwargs): 
@@ -21,7 +32,7 @@ class TransformerBlock(layers.Layer):
         )
         self.dropout_1 = layers.Dropout(self.dropout_rate)
         self.ln_1 = layers.LayerNormalization(epsilon=1e-6)
-        self.ffn_1 = layers.Dense(self.ff_dim, activation="relu")
+        self.ffn_1 = layers.Dense(self.ff_dim, activation=activation)
         self.ffn_2 = layers.Dense(self.embed_dim)
         self.dropout_2 = layers.Dropout(self.dropout_rate)
         self.ln_2 = layers.LayerNormalization(epsilon=1e-6)

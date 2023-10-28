@@ -5,18 +5,17 @@ from tensorflow.keras import layers
 
 config = configparser.ConfigParser()
 config.read('./generative/config.ini')
-config_params = config["params"]
+config_params = config['params']
 params = {key: config_params[key] for key in config_params}
-
-# Read parameters from the config
 max_len = int(params['max_len'])
 vocab_size = int(params['vocab_size'])
 embedding_dim = int(params['embedding_dim'])
 num_heads = int(params['n_heads'])
-num_layers =  int(params['n_layers'])
+num_layers = int(params['n_layers'])
 key_dim = int(params['key_dim'])
 ff_dim = int(params['feed_forward_dim'])
 dropout_rate = float(params['dropout'])
+warmup_steps = int(params['warmup_steps'])
 activation = params['activation']
 epsilon = 1e-6 
 
@@ -44,7 +43,7 @@ class FeedForwardNetwork(layers.Layer):
         return self.ffn_2(self.ffn_1(x))
 
 class TransformerBlock(layers.Layer):
-    def __init__(self, num_heads, key_dim, embed_dim, ff_dim, dropout_rate, epsilon, activation, num_layers, **kwargs):
+    def __init__(self, num_heads, key_dim, embed_dim, ff_dim, dropout_rate, epsilon, activation, num_layers=1, **kwargs):
         super(TransformerBlock, self).__init__(**kwargs)
         self.num_heads = num_heads
         self.key_dim = key_dim
@@ -53,7 +52,7 @@ class TransformerBlock(layers.Layer):
         self.dropout_rate = dropout_rate
         self.epsilon = epsilon 
         self.activation = activation
-        self.num_layers = num_layers  
+        self.num_layers = num_layers  # New parameter for the number of FeedForwardNetwork layers
 
         self.attn = layers.MultiHeadAttention(num_heads, key_dim, output_shape=embed_dim)
         self.dropout_1 = layers.Dropout(self.dropout_rate)
@@ -93,7 +92,7 @@ class TransformerBlock(layers.Layer):
             'dropout_rate': self.dropout_rate,
             'epsilon': self.epsilon,
             'activation': self.activation,
-            'num_layers': self.num_layers  
+            'num_layers': self.num_layers  # Include num_layers in the configuration
         })
         return config
 
@@ -143,8 +142,7 @@ transformer_block = TransformerBlock(
     ff_dim=ff_dim,
     dropout_rate=dropout_rate,
     epsilon=epsilon,
-    activation=activation,
-    num_layers=num_layers
+    activation=activation 
 )
 feed_forward_network = FeedForwardNetwork(
     ff_dim=ff_dim
