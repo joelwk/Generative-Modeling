@@ -25,11 +25,12 @@ epsilon = 1e-6
 
 class CustomSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
     "Custom learning rate for Adam optimizer"
-    def __init__(self, key_dim=key_dim, warmup_steps=warmup_steps):
+    def __init__(self, key_dim, warmup_steps):
         super().__init__()
         self.key_dim = key_dim
         self.warmup_steps = warmup_steps
         self.d = tf.cast(self.key_dim, tf.float32)
+
     @tf.function
     def __call__(self, step):
         step = tf.cast(step, dtype=tf.float32)
@@ -45,7 +46,7 @@ class CustomSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
         return config
 
 def train_model(preload_model=False, model_path=None, use_sinusoidal=False, return_attention_scores=False):
-    lr = CustomSchedule(key_dim)
+    lr = CustomSchedule(key_dim, warmup_steps)
     optimizer = tf.keras.optimizers.Adam(lr, beta_1=0.9, beta_2=0.98, epsilon=1e-9)
     inputs = layers.Input(shape=(None,), dtype=tf.int32)
     x = TokenAndPositionEmbedding(max_len, vocab_size, embedding_dim, use_sinusoidal=use_sinusoidal, initializer="glorot_uniform")(inputs)
@@ -56,7 +57,7 @@ def train_model(preload_model=False, model_path=None, use_sinusoidal=False, retu
             key_dim, 
             embedding_dim, 
             ff_dim, 
-            dropout_rate=dropout_rate,  # Add this line
+            dropout_rate=dropout_rate,
             epsilon=float(epsilon), 
             activation=activation
         )(x, return_attention_scores=return_attention_scores)
@@ -102,7 +103,8 @@ class TrainTextGenerator(callbacks.Callback):
             scaled_probs /= np.sum(scaled_probs)
             return np.random.choice(len(scaled_probs), p=scaled_probs), scaled_probs
         else:
-            raise ValueError("Invalid input: Expected a probability distribution.")
+            if np.any(probs < 0) or not np.isclose(np.sum(probs), 1.0):
+                raise ValueError("Invalid input: Expected a probability distribution.")
                 
     def generate(self, start_prompt, max_tokens, temperature):
         start_tokens = [self.word_to_index.get(word, 1) for word in start_prompt.split()]

@@ -46,7 +46,7 @@ class CustomSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
 
 def train_model(preload_model=False, model_path=None):
 
-    lr = CustomSchedule(key_dim)
+    lr = CustomSchedule(key_dim, warmup_steps)
     optimizer = tf.keras.optimizers.Adam(lr, beta_1=0.9, beta_2=0.98, epsilon=1e-9)
     inputs = layers.Input(shape=(None,), dtype=tf.int32)
     x = TokenAndPositionEmbedding(max_len, vocab_size, embedding_dim)(inputs)
