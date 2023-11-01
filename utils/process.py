@@ -7,7 +7,7 @@ import logging
 from utils.fnProcessing import pad_punctuation, remove_urls, remove_whitespace, clean_text
 
 config = configparser.ConfigParser()
-config.read('./generative/config.ini')
+config.read('./generative_text/configkeras.ini')
 config_params = config['params']
 params = {key: config_params[key] for key in config_params}
 max_len = int(params['max_len'])

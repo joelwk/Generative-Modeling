@@ -102,3 +102,19 @@ def augment_dialogs(replies, original_data):
             replies.at[index, 'response_comment'] = response_post.iloc[0]['text_clean']
             replies.at[index, 'response_posted_date_time'] = response_post.iloc[0]['posted_date_time']
     return replies
+
+def parse_args():
+    parser = argparse.ArgumentParser(description='Metadata directories')
+    parser.add_argument('--mode', type=str, default='local', help='Execution mode: local or cloud')
+    return parser.parse_args()
+
+def generate_config(base_directory):
+    return {
+        'meta_data_dir': os.path.join(base_directory, 'meta_data'),
+        'model_dir': os.path.join(base_directory, 'models'),
+    }
+
+def create_directories(config):
+    for key, path in config.items():
+        if not path.endswith(('.parquet', '.yaml')):
+            os.makedirs(path, exist_ok=True)
