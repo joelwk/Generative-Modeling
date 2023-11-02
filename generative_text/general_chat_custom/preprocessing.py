@@ -6,20 +6,21 @@ config = configparser.ConfigParser()
 config.read('./generative_text/configcustom.ini')
 config_params = config['params']
 params = {key: config_params[key] for key in config_params}
-base_directory = params['dataset_path']
+config_paths = config['paths']
+paths = {key: config_paths[key] for key in config_paths}
+base_directory = paths['metadata_path']
 
 class DirectoryManager:
     @staticmethod
     def generate_config(base_directory):
         return {
-            'meta_data_dir': 'meta_data',
-        }
-
+            'meta_data_dir': 'meta_data',}
     @staticmethod
     def create_directories(config):
         for key, path in config.items():
             if not path.endswith(('.parquet', '.yaml')):
                 os.makedirs(path, exist_ok=True)
+        
 class Vocabulary:
     def __init__(self, name):
         PAD_token = 0   # Used for padding short sentences
@@ -60,11 +61,13 @@ class Vocabulary:
 
     def to_index(self, word):
         return self.word2index[word]
+
 class DataPreparation:
     @staticmethod
     def prep_data(data):
         data['text_pairs'] = data['comment'] +' , '+ data['response_comment']
         return data[['text_pairs']]
+
     @staticmethod
     def normalize(line):
         if pd.isna(line):
@@ -76,32 +79,28 @@ class DataPreparation:
         line = re.sub(r"(\s[^ \w])(?!\s)", r"\1 ", line)
         line = re.sub(r"(?!\s)([^ \w])$", r" \1", line)
         parts = line.split(" , ")
-        
         if len(parts) < 2:
             print(f"Skipping line: {line}")
             return None
         thread, comment = parts[0],parts[1]
         comment = "[start] " + comment + " [end]"
         return thread, comment
+
     @staticmethod
     def prepare_and_load_data(replies):
         prepared_text = DataPreparation.prep_data(replies)
         text_list = [i for i in prepared_text.text_pairs]
-
         text_pairs = [DataPreparation.normalize(line) for line in text_list if not pd.isna(line)]
-
         corpus_comments = replies['comment'].tolist()
         voc_comment = Vocabulary('comments')
         for sent in corpus_comments:
             if not pd.isna(sent):
                 voc_comment.add_sentence(sent)
-
         corpus_threads = replies['response_comment'].tolist()
         voc_response_comment = Vocabulary('voc_response_comment')
         for sent in corpus_threads:
             if not pd.isna(sent):
                 voc_response_comment.add_sentence(sent)
-
         return text_pairs, voc_comment, voc_response_comment
 
 def initialize_and_prepare(base_directory, replies):

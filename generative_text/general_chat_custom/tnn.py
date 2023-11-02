@@ -3,55 +3,24 @@ import os
 import tensorflow as tf
 import os
 import configparser
-config = configparser.ConfigParser()
-config.read('./generative_text/configcustom.ini')
-config_params = config['params']
-params = {key: config_params[key] for key in config_params}
-max_len = int(params['max_len'])
-vocab_size = int(params['vocab_size'])
-embedding_dim = int(params['embedding_dim'])
-num_heads = int(params['n_heads'])
-num_layers = int(params['n_layers'])
-key_dim = int(params['key_dim'])
-ff_dim = int(params['feed_forward_dim'])
-dropout_rate = float(params['dropout'])
-warmup_steps = int(params['warmup_steps'])
-activation = params['activation']
-epsilon = 1e-6 
-
 from generative_text.general_chat_custom.layers import cross_attention, self_attention, feed_forward, encoder, decoder
 from generative_text.general_chat_custom.PositionalEmbedding import PositionalEmbedding
 
-def transformer(num_layers, num_heads, seq_len, key_dim, ff_dim, vocab_size_src,
-                vocab_size_tgt, dropout=0.1, name="transformer"):
-    embed_shape = (seq_len, key_dim)  # output shape of the positional embedding layer
-    # set up layers
-    input_enc = tf.keras.layers.Input(shape=(seq_len,), dtype="int32",
-                                      name="encoder_inputs")
-    input_dec = tf.keras.layers.Input(shape=(seq_len,), dtype="int32",
-                                      name="decoder_inputs")
-    embed_enc = PositionalEmbedding(seq_len, vocab_size_src, key_dim, name="embed_enc")
-    embed_dec = PositionalEmbedding(seq_len, vocab_size_tgt, key_dim, name="embed_dec")
-
-    final = tf.keras.layers.Dense(vocab_size_tgt, name="linear")
-    encoder_model = encoder(input_shape=(seq_len, key_dim), key_dim=key_dim, ff_dim=ff_dim,
-                            num_heads=num_heads)
-    decoder_model = decoder(input_shape=(seq_len, key_dim), key_dim=key_dim, ff_dim=ff_dim,
-                            num_heads=num_heads)
-    # build output
-    x1 = embed_enc(input_enc)
-    x2 = embed_dec(input_dec)
-    for _ in range(num_layers):
-        x1 = encoder_model(x1)
-    for _ in range(num_layers):
-        x2 = decoder_model([x2, x1])
-    output = final(x2)
-    # XXX keep this try-except block
-    try:
-        del output._keras_mask
-    except AttributeError:
-        pass
-    model = tf.keras.Model(inputs=[input_enc, input_dec], outputs=output, name=name)
+def transformer(num_layers, num_heads, key_dim, ff_dim, vocab_size_src, vocab_size_tgt, dropout, name="transformer"):
+    input_enc = tf.keras.layers.Input(shape=(None,), dtype="int32", name="encoder_inputs")
+    input_dec = tf.keras.layers.Input(shape=(None,), dtype="int32", name="decoder_inputs")
+    embed_enc = PositionalEmbedding(vocab_size_src, key_dim, name="embed_enc")(input_enc)
+    embed_dec = PositionalEmbedding(vocab_size_tgt, key_dim, name="embed_dec")(input_dec)
+    encoder_layers = [encoder(key_dim=key_dim, ff_dim=ff_dim, num_heads=num_heads, dropout=dropout, prefix=f"encoder_layer_{i}") for i in range(num_layers)]
+    decoder_layers = [decoder(key_dim=key_dim, ff_dim=ff_dim, num_heads=num_heads, dropout=dropout, prefix=f"decoder_layer_{i}") for i in range(num_layers)]
+    x1 = embed_enc
+    x2 = embed_dec
+    for i, enc_layer in enumerate(encoder_layers):
+        x1 = enc_layer(x1)
+    for i, dec_layer in enumerate(decoder_layers):
+        x2 = dec_layer([x2, x1])
+    final_output = tf.keras.layers.Dense(vocab_size_tgt, name="final_output")(x2)
+    model = tf.keras.Model(inputs=[input_enc, input_dec], outputs=final_output, name=name)
     return model
 
 def masked_loss(label, pred):
@@ -86,7 +55,7 @@ class CustomSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
         arg1 = tf.math.rsqrt(step)
         arg2 = step * (self.warmup_steps ** -1.5)
         return tf.math.rsqrt(self.d) * tf.math.minimum(arg1, arg2)
-
+        
     def get_config(self):
         config = {
             "key_dim": self.key_dim,
