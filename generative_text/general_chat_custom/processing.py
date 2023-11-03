@@ -9,12 +9,6 @@ import tensorflow as tf
 import configparser
 from generative_text.general_chat_custom.preprocessing import DirectoryManager  
 from generative_text.general_chat_custom.preprocessing import initialize_and_prepare  
-import sentencepiece as spm
-import nltk
-from nltk.tokenize import word_tokenize
-from collections import Counter
-# Ensure you have the necessary NLTK data
-# nltk.download('punkt')
 
 def process_and_load_data(replies):
     # Constants
