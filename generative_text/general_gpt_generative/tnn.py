@@ -3,24 +3,21 @@ import os
 import tensorflow as tf
 import os
 import configparser
-from generative_text.general_chat_custom.layers import cross_attention, self_attention, feed_forward, encoder, decoder
-from generative_text.general_chat_custom.PositionalEmbedding import PositionalEmbedding
+from generative_text.general_gpt_generative.layers import cross_attention, self_attention, feed_forward, decoder
+from generative_text.general_gpt_generative.positionalencoding import PositionalEncoding
 
-def transformer(num_layers, num_heads, key_dim, ff_dim, vocab_size_src, vocab_size_tgt, dropout, name="transformer"):
-    input_enc = tf.keras.layers.Input(shape=(None,), dtype="int32", name="encoder_inputs")
-    input_dec = tf.keras.layers.Input(shape=(None,), dtype="int32", name="decoder_inputs")
-    embed_enc = PositionalEmbedding(vocab_size_src, key_dim, name="embed_enc")(input_enc)
-    embed_dec = PositionalEmbedding(vocab_size_tgt, key_dim, name="embed_dec")(input_dec)
-    encoder_layers = [encoder(key_dim=key_dim, ff_dim=ff_dim, num_heads=num_heads, dropout=dropout, prefix=f"encoder_layer_{i}") for i in range(num_layers)]
-    decoder_layers = [decoder(key_dim=key_dim, ff_dim=ff_dim, num_heads=num_heads, dropout=dropout, prefix=f"decoder_layer_{i}") for i in range(num_layers)]
-    x1 = embed_enc
-    x2 = embed_dec
-    for i, enc_layer in enumerate(encoder_layers):
-        x1 = enc_layer(x1)
-    for i, dec_layer in enumerate(decoder_layers):
-        x2 = dec_layer([x2, x1])
-    final_output = tf.keras.layers.Dense(vocab_size_tgt, name="final_output")(x2)
-    model = tf.keras.Model(inputs=[input_enc, input_dec], outputs=final_output, name=name)
+def transformer(num_layers, num_heads, key_dim, ff_dim, vocab_size, dropout, name="transformer"):
+    inputs = tf.keras.layers.Input(shape=(None,), dtype="int32", name="inputs")
+    embedding_layer = PositionalEncoding(vocab_size, key_dim, name="embedding")
+    x = embedding_layer(inputs)
+
+    for i in range(num_layers):
+        x = self_attention(
+            key_dim=key_dim, ff_dim=ff_dim, num_heads=num_heads, 
+            dropout=dropout, prefix=f"layer_{i}", causal=True)(x)
+
+    final_output = tf.keras.layers.Dense(vocab_size, name="final_output")(x)
+    model = tf.keras.Model(inputs=inputs, outputs=final_output, name=name)
     return model
 
 def masked_loss(label, pred):

@@ -3,8 +3,7 @@ import os
 import numpy as np
 import configparser
 
-
-class PositionalEmbedding(tf.keras.layers.Layer):
+class PositionalEncoding(tf.keras.layers.Layer):
     def __init__(self, vocab_size, embed_dim, **kwargs):
         super().__init__(**kwargs)
         self.embed_dim = embed_dim
@@ -35,7 +34,6 @@ class PositionalEmbedding(tf.keras.layers.Layer):
         position_embeddings = tf.expand_dims(position_embeddings, 0)  # Add batch dimension
 
         return position_embeddings
-
 
     def compute_mask(self, inputs, mask=None):
         return tf.math.not_equal(inputs, 0)
