@@ -4,7 +4,7 @@ import os
 import configparser
 
 config = configparser.ConfigParser()
-config.read('./generative_text/configcustom.ini')
+config.read('./GenerativeModeling/generative_text/configcustom.ini')
 config_params = config['params']
 params = {key: config_params[key] for key in config_params}
 config_paths = config['paths']

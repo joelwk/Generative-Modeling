@@ -8,11 +8,8 @@ import configparser
 import pandas as pd
 from utils.fnProcessing import find_dialogs, augment_dialogs,view_shapes
 from tensorflow.keras.layers.experimental.preprocessing import TextVectorization
-from generative_text.general_gpt_generative.preprocessing import DirectoryManager, Vocabulary
+from GenerativeModeling.generative_text.general_gpt_generative.preprocessing import DirectoryManager, Vocabulary
 
-from generative_text.general_gpt_generative.tnn import transformer, masked_loss, masked_accuracy
-from generative_text.general_gpt_generative.tnn import CustomSchedule
-from generative_text.general_gpt_generative.positionalencoding import PositionalEncoding
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
 import tensorflow as tf
 import os
@@ -24,7 +21,7 @@ tf.random.set_seed(SEED)
 np.random.seed(SEED)
 
 config = configparser.ConfigParser()
-config.read('./generative_text/configcustom.ini')
+config.read('./GenerativeModeling/generative_text/configcustom.ini')
 config_params = config['params']
 config_paths = config['paths']
 paths = {key: config_paths[key] for key in config_paths}

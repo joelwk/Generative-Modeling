@@ -5,7 +5,7 @@ import os
 import tensorflow as tf
 from tensorflow.keras.models import load_model
 from tensorflow.keras.utils import custom_object_scope
-from generative_text.general_generative_keras.tnn import TransformerBlock, TokenAndPositionEmbedding
+from generative_text.general_tnn_generative.tnn import TransformerBlock, TokenAndPositionEmbedding
 
 config = configparser.ConfigParser()
 config.read('./generative_text/configkeras.ini')
