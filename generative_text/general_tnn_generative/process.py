@@ -75,6 +75,5 @@ def main(data, input_col='text', clean_col='text'):
     vocab = vectorize_layer.get_vocabulary()
     return train_ds, val_ds, test_ds, vocab
 
-# if __name__ == "__main__":
-    # Assuming 'data' is a pandas DataFrame with a text column named 'posted_comment'
-train_ds, val_ds, test_ds, vocab = main(training_data, input_col='text', clean_col='text_clean')
+if __name__ == "__main__":
+    train_ds, val_ds, test_ds, vocab = main(training_data, input_col='text', clean_col='text_clean')
