@@ -1,4 +1,5 @@
 import re
+import os
 import configparser
 import warnings
 import string
@@ -12,7 +13,7 @@ from profanity import profanity
 warnings.filterwarnings("ignore", category=MarkupResemblesLocatorWarning)
 warnings.filterwarnings("ignore", category=UserWarning, module='bs4')
 
-def read_config(section="directory", config_path='./../'):
+def read_config(section="params", config_path='./../'):
     if not os.path.exists(config_path):
         print(f"Configuration file {config_path} not found.")
         raise FileNotFoundError(f"Configuration file not found: {config_path}")
@@ -27,7 +28,7 @@ url_regex = re.compile(r'http\S+|www.\S+')
 whitespace_regex = re.compile(r'\s+')
 punctuation_regex = re.compile(f"([{string.punctuation}])")
 non_alphanumeric_regex = re.compile(r'[^a-zA-Z0-9.,!?\' ]')
-contraction_mapping = pd.read_json('utils/contraction_mapping.json', typ='series').to_dict()
+contraction_mapping = pd.read_json('./generative_text/utils/contraction_mapping.json', typ='series').to_dict()
 
 def pad_punctuation(s):
     if not isinstance(s, str):
