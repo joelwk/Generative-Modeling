@@ -52,7 +52,7 @@ def train_model(preload_model=False, model_path=None):
     x = TokenAndPositionEmbedding(max_len, vocab_size, embedding_dim)(inputs)
     attention_scores_list = []
     for _ in range(num_layers): 
-        x, attention_scores = TransformerBlock(num_heads, key_dim, embedding_dim, ff_dim)(x)
+        x, attention_scores = TransformerBlock(num_heads, key_dim, embedding_dim, ff_dim, activation)(x)
         attention_scores_list.append(attention_scores)
     outputs = layers.Dense(vocab_size, activation="softmax")(x)
     gpt = models.Model(inputs=inputs, outputs=[outputs] + attention_scores_list)
