@@ -1,24 +1,9 @@
-import configparser
 import tensorflow as tf
 import pandas as pd
-from utils.fnProcessing import pad_punctuation, normalize_text, remove_whitespace
+from utils.fnProcessing import read_config, pad_punctuation, normalize_text, remove_whitespace
 
-config = configparser.ConfigParser()
-config.read('./generative_text/configkeras.ini')
-config_params = config['params']
+config_params = read_config(section='params', config_path='./generative_text/configkeras.ini')
 params = {key: config_params[key] for key in config_params}
-max_len = int(params['max_len'])
-vocab_size = int(params['vocab_size'])
-batch_size = int(params['batch_size'])
-
-config = configparser.ConfigParser()
-config.read('./generative_text/configkeras.ini')
-config_params = config['params']
-params = {key: config_params[key] for key in config_params}
-max_len = int(params['max_len'])
-vocab_size = int(params['vocab_size'])
-batch_size =  int(params['batch_size'])
-validation_split = float(params['validation_split'])
 
 def prepare_data(data, input_col, clean_col):
     data[input_col] = data[input_col].astype(str)
@@ -26,10 +11,11 @@ def prepare_data(data, input_col, clean_col):
     return data[data[clean_col].notnull() & data[clean_col].str.strip().astype(bool)]
 
 def get_datasets(text_data):
+    batch_size =  int(params['batch_size'])
+    validation_split = float(params['validation_split'])
+
     text_data = tf.data.Dataset.from_tensor_slices(text_data)
     n_samples = sum(1 for _ in text_data)
-
-    # Split into training, validation, and test sets
     n_train_samples = int(n_samples * float(1 - validation_split))
     n_val_samples = int(n_samples * validation_split)
     train_text_ds = text_data.take(n_train_samples)
@@ -41,11 +27,12 @@ def get_datasets(text_data):
     return train_text_ds, val_text_ds, test_text_ds
 
 def main(data, input_col='text', clean_col='text'):
-    clean_data = prepare_data(data, input_col, clean_col)
-    text_data = [text[:max_len] for text in clean_data[clean_col].tolist()]
-    text_data = [text.lower() for text in text_data]
+    max_len = int(params['max_len'])
+    vocab_size = int(params['vocab_size'])
+    data[input_col] = data[input_col].astype(str)
+    data[clean_col] = data[input_col].apply(normalize_text).apply(remove_whitespace).apply(pad_punctuation)
+    return data[data[clean_col].notnull() & data[clean_col].str.strip().astype(bool)]
 
-    # Adapt the TextVectorization layer
     vectorize_layer = tf.keras.layers.TextVectorization(
         standardize=None,
         max_tokens=vocab_size,
@@ -71,9 +58,8 @@ def main(data, input_col='text', clean_col='text'):
     val_ds = val_ds.prefetch(tf.data.AUTOTUNE)
     test_ds = test_ds.prefetch(tf.data.AUTOTUNE)
 
-    # Get the vocabulary
     vocab = vectorize_layer.get_vocabulary()
     return train_ds, val_ds, test_ds, vocab
 
 if __name__ == "__main__":
-    train_ds, val_ds, test_ds, vocab = main(training_data, input_col='text', clean_col='text_clean')
+    train_ds, val_ds, test_ds, vocab = main(training_data, input_col='text', clean_col='text')

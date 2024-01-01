@@ -6,11 +6,11 @@ from tensorflow.keras import layers, models, losses, callbacks
 import traceback
 from tensorflow.keras.models import load_model 
 from generative_text.general_tnn_generative.tnn import TransformerBlock, TokenAndPositionEmbedding, causal_attention_mask
+from utils.fnProcessing import read_config,pad_punctuation, normalize_text, remove_whitespace
 
-config = configparser.ConfigParser()
-config.read('./generative_text/configkeras.ini')
-config_params = config['params']
+config_params = read_config(section='params', config_path='./generative_text/configkeras.ini')
 params = {key: config_params[key] for key in config_params}
+
 max_len = int(params['max_len'])
 vocab_size = int(params['vocab_size'])
 embedding_dim = int(params['embedding_dim'])
@@ -21,7 +21,7 @@ ff_dim = int(params['feed_forward_dim'])
 dropout_rate = float(params['dropout'])
 warmup_steps = int(params['warmup_steps'])
 activation = params['activation']
-epsilon = 1e-6 
+epsilon = float(params['epsilon'])
 
 class CustomSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
     "Custom learning rate for Adam optimizer"
@@ -47,14 +47,13 @@ class CustomSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
 def train_model(preload_model=False, model_path=None):
 
     lr = CustomSchedule(key_dim, warmup_steps)
-    optimizer = tf.keras.optimizers.Adam(lr, beta_1=0.9, beta_2=0.98, epsilon=1e-9)
+    optimizer = tf.keras.optimizers.Adam(lr, beta_1=0.9, beta_2=0.98, epsilon=epsilon)
     inputs = layers.Input(shape=(None,), dtype=tf.int32)
     x = TokenAndPositionEmbedding(max_len, vocab_size, embedding_dim)(inputs)
     attention_scores_list = []
-    for _ in range(3): 
-        x, attention_scores = TransformerBlock(num_heads,key_dim,embedding_dim, ff_dim)(x)
+    for _ in range(num_layers): 
+        x, attention_scores = TransformerBlock(num_heads, key_dim, embedding_dim, ff_dim)(x)
         attention_scores_list.append(attention_scores)
-    
     outputs = layers.Dense(vocab_size, activation="softmax")(x)
     gpt = models.Model(inputs=inputs, outputs=[outputs] + attention_scores_list)
     gpt.compile(optimizer=optimizer, loss=[losses.SparseCategoricalCrossentropy()] + [None]*5)

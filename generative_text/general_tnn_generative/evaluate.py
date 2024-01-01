@@ -6,11 +6,11 @@ import tensorflow as tf
 from tensorflow.keras.models import load_model
 from tensorflow.keras.utils import custom_object_scope
 from generative_text.general_tnn_generative.tnn import TransformerBlock, TokenAndPositionEmbedding
+from utils.fnProcessing import read_config
 
-config = configparser.ConfigParser()
-config.read('./generative_text/configkeras.ini')
-config_params = config['params']
+config_params = read_config(section='params', config_path='./generative_text/configkeras.ini')
 params = {key: config_params[key] for key in config_params}
+
 max_len = int(params['max_len'])
 vocab_size = int(params['vocab_size'])
 embedding_dim = int(params['embedding_dim'])
@@ -21,7 +21,7 @@ ff_dim = int(params['feed_forward_dim'])
 dropout_rate = float(params['dropout'])
 warmup_steps = int(params['warmup_steps'])
 activation = params['activation']
-epsilon = 1e-6 
+epsilon = float(params['epsilon'])
 
 class CustomSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
     def __init__(self, key_dim, warmup_steps):

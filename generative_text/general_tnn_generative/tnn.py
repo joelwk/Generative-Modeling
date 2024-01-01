@@ -2,24 +2,24 @@ import os
 import configparser
 import tensorflow as tf
 from tensorflow.keras import layers
+from utils.fnProcessing import read_config
 
-config = configparser.ConfigParser()
-config.read('./generative_text/configkeras.ini')
-config_params = config['params']
+config_params = read_config(section='params', config_path='./generative_text/configkeras.ini')
 params = {key: config_params[key] for key in config_params}
-max_len = int(params['max_len'])
-vocab_size = int(params['vocab_size'])
-embedding_dim = int(params['embedding_dim'])
-num_heads = int(params['n_heads'])
-num_layers = int(params['n_layers'])
-key_dim = int(params['key_dim'])
-ff_dim = int(params['feed_forward_dim'])
-dropout_rate = float(params['dropout'])
-warmup_steps = int(params['warmup_steps'])
-activation = params['activation']
-epsilon = 1e-6 
 
 class TransformerBlock(layers.Layer):
+    max_len = int(params['max_len'])
+    vocab_size = int(params['vocab_size'])
+    embedding_dim = int(params['embedding_dim'])
+    num_heads = int(params['n_heads'])
+    num_layers = int(params['n_layers'])
+    key_dim = int(params['key_dim'])
+    ff_dim = int(params['feed_forward_dim'])
+    dropout_rate = float(params['dropout'])
+    warmup_steps = int(params['warmup_steps'])
+    activation = params['activation']
+    epsilon = params['epsilon']
+
     def __init__(self, num_heads, key_dim, embed_dim, ff_dim, dropout_rate=0.1, **kwargs): 
         super(TransformerBlock, self).__init__(**kwargs) 
         self.num_heads = num_heads
