@@ -103,3 +103,13 @@ def view_shapes(data):
     for inputs, targets in data.take(1):
         print("Inputs:", inputs)
         print("Targets:", targets)
+
+def load_csvs(directory_path, starts_with):
+    dataframes = []
+    for file in os.listdir(directory_path):
+        if file.startswith(str(starts_with)):
+            file_path = os.path.join(directory_path, file)
+            df = pd.read_csv(file_path)
+            dataframes.append(df)
+    data = pd.concat(dataframes, ignore_index=True)
+    return data
