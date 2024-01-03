@@ -102,6 +102,21 @@ class ClearMLOps:
             task.close()
             return train_ds, val_ds, test_ds, combined_vocab
 
+    def list_models(self, project_name):
+        project_name = project_name 
+        models = ClearMLModel.query_models(project_name=project_name)
+        print(f"Models in project {project_name}:")
+        for model in models:
+            print(f"Model ID: {model.id}, Name: {model.name}")
+
+    def load_model(self, model_id): 
+        model = ClearMLModel(model_id=model_id)
+        print(f"Model ID: {model.id}")
+        print(f"Name: {model.name}")
+        print(f"URL: {model.url}")
+        local_weights_path = model.get_weights()
+        print(f"Weights downloaded to: {local_weights_path}")
+
 class ClearMLOpsTraining(ClearMLOps):
     def __init__(self, config_path='./generative_text/configkeras.ini'):
         super().__init__(config_path)
@@ -152,7 +167,7 @@ class ClearMLOpsTraining(ClearMLOps):
                 model = train_model(preload_model=False)
             callbacks = self.get_callbacks(self.clearml_params['clearml_output_uri'])
             self.train_and_evaluate(model, train_ds, val_ds, test_ds, callbacks, task)
-            model_filename = os.path.join(self.clearml_params['clearml_output_uri'], f"{self.config_params['model_name']}_{task.id}.h5")
+            model_filename = os.path.join(self.clearml_params['clearml_output_uri'], f"{self.clearml_params['model_name']}_{task.id}.h5")
             model.save(model_filename)
             output_model.update_weights(weights_filename=model_filename)
             task.close()
