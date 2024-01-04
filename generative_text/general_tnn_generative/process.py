@@ -14,18 +14,22 @@ def prepare_data(data, input_col, clean_col):
     return data[data[clean_col].notnull() & data[clean_col].str.strip().astype(bool)]
 
 def get_datasets(text_data):
-    batch_size =  int(params['batch_size'])
+    batch_size = int(params['batch_size'])
     validation_split = float(params['validation_split'])
-    text_data = tf.data.Dataset.from_tensor_slices(text_data)
+    test_split = float(validation_split / 2)
+    if not isinstance(text_data, tf.data.Dataset):
+        text_data = tf.data.Dataset.from_tensor_slices(text_data)
     n_samples = sum(1 for _ in text_data)
-    n_train_samples = int(n_samples * (1 - validation_split))
+    n_train_samples = int(n_samples * (1 - validation_split - test_split))
     n_val_samples = int(n_samples * validation_split)
-    train_buffer_size = max(n_train_samples, 1)
-    val_buffer_size = max(n_val_samples, 1)
-    test_buffer_size = max(n_samples - n_train_samples - n_val_samples, 1)
-    train_text_ds = text_data.take(n_train_samples).batch(batch_size).shuffle(buffer_size=train_buffer_size)
-    val_text_ds = text_data.skip(n_train_samples).take(n_val_samples).batch(batch_size).shuffle(buffer_size=val_buffer_size)
-    test_text_ds = text_data.skip(n_train_samples + n_val_samples).batch(batch_size).shuffle(buffer_size=test_buffer_size)
+    n_test_samples = n_samples - n_train_samples - n_val_samples
+    assert n_train_samples > 0, "Training set has no samples."
+    assert n_val_samples > 0, "Validation set has no samples."
+    assert n_test_samples > 0, "Test set has no samples."
+    text_data = text_data.shuffle(buffer_size=n_samples)
+    train_text_ds = text_data.take(n_train_samples).batch(batch_size)
+    val_text_ds = text_data.skip(n_train_samples).take(n_val_samples).batch(batch_size)
+    test_text_ds = text_data.skip(n_train_samples + n_val_samples).take(n_test_samples).batch(batch_size)
     return train_text_ds, val_text_ds, test_text_ds
 
 def main(data, input_col='text', clean_col='text'):

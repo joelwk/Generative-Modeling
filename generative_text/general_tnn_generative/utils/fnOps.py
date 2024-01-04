@@ -34,10 +34,10 @@ class ClearMLOps:
 
     def initialize_clearml(self, task_name, task_type):
         try:
-            task = Task.init(project_name=clearml_params['clearml_project_name'],
+            task = Task.init(project_name=self.clearml_params['clearml_project_name'],
                             task_name=task_name,
                             task_type=task_type)
-            task.connect(config_params)
+            task.connect(self.config_params)
             return task
         except Exception as e:
             print(f"Failed to initialize ClearML task: {e}")
@@ -50,12 +50,12 @@ class ClearMLOps:
             print(f"Saved DataFrame to {filename}")
         except Exception as e:
             print(f"Failed to save DataFrame to {filename}: {e}")
-
+            
     def upload_dataset_to_clearml(self, dataset_uri, dataset_name):
         try:
-            clearml_dataset = ClearMLDataset.create(dataset_project=clearml_params['clearml_project_name'], dataset_name=dataset_name)
+            clearml_dataset = ClearMLDataset.create(dataset_project=self.clearml_params['clearml_project_name'], dataset_name=dataset_name)
             clearml_dataset.add_files(dataset_uri)
-            clearml_dataset.upload(output_url=clearml_params['clearml_output_uri'])
+            clearml_dataset.upload(output_url=self.clearml_params['clearml_output_uri'])
             clearml_dataset.finalize()
             print(f"Uploaded {dataset_name} to ClearML.")
         except Exception as e:
@@ -72,7 +72,7 @@ class ClearMLOps:
             return None
 
     def get_latest_datasets(self, project_name, base_name='context'):
-        datasets = self.list_datasets(dataset_project=project_name)
+        datasets = self.list_datasets(dataset_project=self.clearml_params['clearml_project_name'])
         filtered_datasets = [d for d in datasets if d['name'].startswith(base_name)]
         sorted_datasets = sorted(filtered_datasets, key=lambda x: x['created'], reverse=True)
         latest_test = sorted_datasets[0] if sorted_datasets else None
@@ -88,15 +88,15 @@ class ClearMLOps:
         if task:
             task_output_uri = task.output_uri or self.clearml_params['clearml_output_uri']
             os.makedirs(task_output_uri, exist_ok=True)
-            filename = self.generate_file_name(dataset_name, task.name, task.id)  # Corrected here
-            self.save_dataset_to_local(training_data, os.path.join(task_output_uri, filename))  # And here
-            self.upload_dataset_to_clearml(os.path.join(task_output_uri, filename), f'{dataset_name}_{task.id}')  # And here
+            filename = self.generate_file_name(dataset_name, task.name, task.id)  
+            self.save_dataset_to_local(training_data, os.path.join(task_output_uri, filename))
+            self.upload_dataset_to_clearml(os.path.join(task_output_uri, filename), f'{dataset_name}_{task.id}')
             task.close()
 
     def get_training_set(self, task_name):
         task = self.initialize_clearml(task_name, Task.TaskTypes.data_processing)
         if task:
-            dataset_info = self.get_latest_datasets(project_name= clearml_project_name)
+            dataset_info = self.get_latest_datasets(project_name= self.clearml_params['clearml_project_name'])
             combined_dataset = self.load_dataset(dataset_info['id'])
             train_ds, val_ds, test_ds, combined_vocab = main(combined_dataset, input_col='text', clean_col='text')
             task.close()
@@ -108,7 +108,7 @@ class ClearMLOps:
         print(f"Models in project {project_name}:")
         for model in models:
             print(f"Model ID: {model.id}, Name: {model.name}")
-
+            
     def load_model(self, model_id): 
         model = ClearMLModel(model_id=model_id)
         print(f"Model ID: {model.id}")
@@ -118,19 +118,15 @@ class ClearMLOps:
         print(f"Weights downloaded to: {local_weights_path}")
 
 class ClearMLOpsTraining(ClearMLOps):
-    def __init__(self, config_path='./generative_text/configkeras.ini'):
+    def __init__(self, clearml_params, config_params, config_path='./generative_text/configkeras.ini'):
         super().__init__(config_path)
-        self.ops.set_clearml_credentials()
-    def __init__(self, clearml_params, config_params):
         self.clearml_params = clearml_params
         self.config_params = config_params
         self.combined_params = {**self.config_params, **self.clearml_params}
-
     def get_callbacks(self, task_output_uri):
         return [
             ModelCheckpoint(filepath=os.path.join(task_output_uri, 'best_model.h5'), monitor='val_loss', save_best_only=True, verbose=1),
-            EarlyStopping(monitor='val_loss', patience=15, restore_best_weights=True)
-        ]
+            EarlyStopping(monitor='val_loss', patience=15, restore_best_weights=True)]
 
     def train_and_evaluate(self, model, train_ds, val_ds, test_ds, callbacks, task):
         logger = task.get_logger()
@@ -146,28 +142,29 @@ class ClearMLOpsTraining(ClearMLOps):
                 metric_name = metric.replace('val_', '')
                 logger.report_scalar(title=metric_name, series=stage, value=value, iteration=epoch)
         test_metrics = model.evaluate(test_ds)
-        for metric_name, value in zip(model.metrics_names, test_metrics):
-            logger.report_scalar(title=metric_name, series="test", value=value, iteration=0)
+        for epoch in range(len(history.epoch)):
+            for metric_name, value in zip(model.metrics_names, test_metrics):
+                logger.report_scalar(title=metric_name, series="test", value=value, iteration=epoch)
         logger.flush()
 
     def run_clearml_training_task(self, task_name, dataset_id=None, training_data=None, vocab=None, load_model=True):
-        task = Task.init(project_name=self.clearml_params['clearml_project_name'], task_name=task_name, task_type=Task.TaskTypes.training)
-        task.connect(self.config_params)
+        task = Task.init(project_name=self.combined_params['clearml_project_name'], task_name=task_name, task_type=Task.TaskTypes.training)
+        task.connect(self.combined_params)
         if task:
-            combined_dataset = self.load_dataset(dataset_id or self.get_latest_datasets(self.clearml_params['clearml_project_name'])['id'])
+            combined_dataset = self.load_dataset(dataset_id or self.get_latest_datasets(self.combined_params['clearml_project_name'])['id'])
             train_ds, val_ds, test_ds, combined_vocab = main(combined_dataset, input_col='text', clean_col='text')
             custom_objects = {
                 'TokenAndPositionEmbedding': TokenAndPositionEmbedding,
                 'TransformerBlock': TransformerBlock,
                 'CustomSchedule': CustomSchedule}
             output_model = OutputModel(task=task)
-            if load_model and os.path.exists(self.config_params['model_path']):
-                model = tf_load_model(self.config_params['model_path'], custom_objects=custom_objects)
+            if load_model and os.path.exists(self.combined_params['model_path']):
+                model = tf_load_model(self.combined_params['model_path'], custom_objects=custom_objects)
             else:
                 model = train_model(preload_model=False)
-            callbacks = self.get_callbacks(self.clearml_params['clearml_output_uri'])
+            callbacks = self.get_callbacks(self.combined_params['clearml_output_uri'])
             self.train_and_evaluate(model, train_ds, val_ds, test_ds, callbacks, task)
-            model_filename = os.path.join(self.clearml_params['clearml_output_uri'], f"{self.clearml_params['model_name']}_{task.id}.h5")
+            model_filename = os.path.join(self.combined_params['clearml_output_uri'], f"{self.combined_params['model_name']}_{task.id}.h5")
             model.save(model_filename)
             output_model.update_weights(weights_filename=model_filename)
             task.close()
