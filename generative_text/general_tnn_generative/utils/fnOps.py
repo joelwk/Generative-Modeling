@@ -27,8 +27,7 @@ class ClearMLOps:
         Task.set_credentials(api_host=api_host, web_host=web_host, files_host=files_host, key=key, secret=secret)
 
     def list_datasets(self, project_name=None):
-        datasets = ClearMLDataset.list_datasets(
-            dataset_project=project_name)
+        datasets = ClearMLDataset.list_datasets(dataset_project=project_name)
         for dataset in datasets:
             print(f"ID: {dataset['id']}, Name: {dataset['name']}, Project: {dataset['project']}, Tags: {dataset.get('tags', [])}")
 
@@ -72,8 +71,8 @@ class ClearMLOps:
             return None
 
     def get_latest_datasets(self, project_name, base_name='context'):
-        datasets = self.list_datasets(dataset_project=self.clearml_params['clearml_project_name'])
-        filtered_datasets = [d for d in datasets if d['name'].startswith(base_name)]
+        datasets = self.list_datasets(self.clearml_params['clearml_project_name'])
+        filtered_datasets = [d for d in datasets if d['Name'].startswith(base_name)]
         sorted_datasets = sorted(filtered_datasets, key=lambda x: x['created'], reverse=True)
         latest_test = sorted_datasets[0] if sorted_datasets else None
         return latest_test
@@ -94,13 +93,10 @@ class ClearMLOps:
             task.close()
 
     def get_training_set(self, task_name):
-        task = self.initialize_clearml(task_name, Task.TaskTypes.data_processing)
-        if task:
-            dataset_info = self.get_latest_datasets(project_name= self.clearml_params['clearml_project_name'])
-            combined_dataset = self.load_dataset(dataset_info['id'])
-            train_ds, val_ds, test_ds, combined_vocab = main(combined_dataset, input_col='text', clean_col='text')
-            task.close()
-            return train_ds, val_ds, test_ds, combined_vocab
+        dataset_info = self.get_latest_datasets(project_name= self.clearml_params['clearml_project_name'])
+        combined_dataset = self.load_dataset(dataset_info['id'])
+        train_ds, val_ds, test_ds, combined_vocab = main(combined_dataset, input_col='text', clean_col='text')
+        return train_ds, val_ds, test_ds, combined_vocab
 
     def list_models(self, project_name):
         project_name = project_name 
@@ -123,6 +119,7 @@ class ClearMLOpsTraining(ClearMLOps):
         self.clearml_params = clearml_params
         self.config_params = config_params
         self.combined_params = {**self.config_params, **self.clearml_params}
+
     def get_callbacks(self, task_output_uri):
         return [
             ModelCheckpoint(filepath=os.path.join(task_output_uri, 'best_model.keras'), monitor='val_loss', save_best_only=True, verbose=1),
@@ -157,18 +154,21 @@ class ClearMLOpsTraining(ClearMLOps):
                 'TokenAndPositionEmbedding': TokenAndPositionEmbedding,
                 'TransformerBlock': TransformerBlock,
                 'CustomSchedule': CustomSchedule}
-            output_model = OutputModel(task=task)
             if load_model == 'train':
-                input_model = InputModel(model_id=model_id,framework=None_)
+                input_model = InputModel(model_id=model_id)
                 local_model_path = input_model.get_local_copy(force_download=False)
                 model = train_model(preload_model=True, model_path=local_model_path)
-            if load_model == 'new':
-                output_model = OutputModel(task=task,framework='Tensorflow')
+                output_model = input_model 
+            elif load_model == 'new':
                 model = train_model(preload_model=False)
+                output_model = OutputModel(task=task, framework='Keras')
+
             callbacks = self.get_callbacks(self.combined_params['clearml_output_uri'])
             self.train_and_evaluate(model, train_ds, val_ds, test_ds, callbacks, task)
+            
             model_filename = os.path.join(self.combined_params['clearml_output_uri'], f"{self.combined_params['model_name']}_{task.id}.keras")
             model.save(model_filename)
             output_model.update_weights(weights_filename=model_filename)
+            
             task.close()
             task.mark_completed()
