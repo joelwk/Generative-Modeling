@@ -1,4 +1,4 @@
-from clearml import Task, Dataset as ClearMLDataset, Model as ClearMLModel, Logger, OutputModel
+from clearml import Task, Dataset as ClearMLDataset, Model as ClearMLModel, Logger, OutputModel, InputModel
 from tensorflow.keras.models import load_model as tf_load_model
 from generative_text.general_tnn_generative.utils.fnProcessing import read_config
 from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping
@@ -125,7 +125,7 @@ class ClearMLOpsTraining(ClearMLOps):
         self.combined_params = {**self.config_params, **self.clearml_params}
     def get_callbacks(self, task_output_uri):
         return [
-            ModelCheckpoint(filepath=os.path.join(task_output_uri, 'best_model.h5'), monitor='val_loss', save_best_only=True, verbose=1),
+            ModelCheckpoint(filepath=os.path.join(task_output_uri, 'best_model.keras'), monitor='val_loss', save_best_only=True, verbose=1),
             EarlyStopping(monitor='val_loss', patience=15, restore_best_weights=True)]
 
     def train_and_evaluate(self, model, train_ds, val_ds, test_ds, callbacks, task):
@@ -147,7 +147,7 @@ class ClearMLOpsTraining(ClearMLOps):
                 logger.report_scalar(title=metric_name, series="test", value=value, iteration=epoch)
         logger.flush()
 
-    def run_clearml_training_task(self, task_name, dataset_id=None, training_data=None, vocab=None, load_model=True):
+    def run_clearml_training_task(self, task_name, dataset_id=None, load_model='new', model_id=None):
         task = Task.init(project_name=self.combined_params['clearml_project_name'], task_name=task_name, task_type=Task.TaskTypes.training)
         task.connect(self.combined_params)
         if task:
@@ -158,13 +158,16 @@ class ClearMLOpsTraining(ClearMLOps):
                 'TransformerBlock': TransformerBlock,
                 'CustomSchedule': CustomSchedule}
             output_model = OutputModel(task=task)
-            if load_model and os.path.exists(self.combined_params['model_path']):
-                model = tf_load_model(self.combined_params['model_path'], custom_objects=custom_objects)
-            else:
+            if load_model == 'train':
+                input_model = InputModel(model_id=model_id,framework=None_)
+                local_model_path = input_model.get_local_copy(force_download=False)
+                model = train_model(preload_model=True, model_path=local_model_path)
+            if load_model == 'new':
+                output_model = OutputModel(task=task,framework='Tensorflow')
                 model = train_model(preload_model=False)
             callbacks = self.get_callbacks(self.combined_params['clearml_output_uri'])
             self.train_and_evaluate(model, train_ds, val_ds, test_ds, callbacks, task)
-            model_filename = os.path.join(self.combined_params['clearml_output_uri'], f"{self.combined_params['model_name']}_{task.id}.h5")
+            model_filename = os.path.join(self.combined_params['clearml_output_uri'], f"{self.combined_params['model_name']}_{task.id}.keras")
             model.save(model_filename)
             output_model.update_weights(weights_filename=model_filename)
             task.close()
