@@ -42,10 +42,10 @@ class ClearMLOps:
             print(f"Failed to initialize ClearML task: {e}")
             return None
 
-    def save_dataset_to_local(self, df, filename):
-        os.makedirs(os.path.dirname(filename), exist_ok=True)
+    def save_dataset_to_local(self, df, dir_path, filename):
+        os.makedirs(os.path.dirname(dir_path), exist_ok=True)
         try:
-            df.to_parquet(filename)
+            df.to_parquet(os.path.join(dir_path, filename))
             print(f"Saved DataFrame to {filename}")
         except Exception as e:
             print(f"Failed to save DataFrame to {filename}: {e}")
@@ -53,9 +53,10 @@ class ClearMLOps:
     def upload_dataset_to_clearml(self, dataset_uri, dataset_name):
         try:
             clearml_dataset = ClearMLDataset.create(dataset_project=self.clearml_params['clearml_project_name'], dataset_name=dataset_name)
+            # This should only recieve dataset_uri (not filename)
             clearml_dataset.add_files(dataset_uri)
-            clearml_dataset.upload(output_url=self.clearml_params['clearml_output_uri'])
-            clearml_dataset.finalize()
+            # Do not pass an output uri since we have it saved already locally
+            clearml_dataset.finalize(auto_upload=True)
             print(f"Uploaded {dataset_name} to ClearML.")
         except Exception as e:
             print(f"Failed to upload dataset to ClearML: {e}")
@@ -87,8 +88,8 @@ class ClearMLOps:
         if task:
             task_output_uri = task.output_uri or self.clearml_params['clearml_output_uri']
             os.makedirs(task_output_uri, exist_ok=True)
-            filename = self.generate_file_name(dataset_name, task.name, task.id)  
-            self.save_dataset_to_local(training_data, os.path.join(task_output_uri, filename))
+            filename = self.generate_file_name(dataset_name, task.name, task.id)
+            self.save_dataset_to_local(training_data, task_output_uri, filename)
             self.upload_dataset_to_clearml(os.path.join(task_output_uri, filename), f'{dataset_name}_{task.id}')
             task.close()
 
@@ -123,7 +124,7 @@ class ClearMLOpsTraining(ClearMLOps):
     def get_callbacks(self, task_output_uri):
         return [
             ModelCheckpoint(filepath=os.path.join(task_output_uri, 'best_model.keras'), monitor='val_loss', save_best_only=True, verbose=1),
-            EarlyStopping(monitor='val_loss', patience=15, restore_best_weights=True)]
+            EarlyStopping(monitor='val_loss', patience=6, restore_best_weights=True)]
 
     def train_and_evaluate(self, model, train_ds, val_ds, test_ds, callbacks, task):
         logger = task.get_logger()
@@ -135,7 +136,7 @@ class ClearMLOpsTraining(ClearMLOps):
         for epoch in range(len(history.epoch)):
             for metric, values in history.history.items():
                 value = values[epoch]
-                stage = 'train' if 'val' not in metric else 'validation'
+                stage = 'train_loss' if 'val' not in metric else 'val_loss'
                 metric_name = metric.replace('val_', '')
                 logger.report_scalar(title=metric_name, series=stage, value=value, iteration=epoch)
         test_metrics = model.evaluate(test_ds)
@@ -154,21 +155,16 @@ class ClearMLOpsTraining(ClearMLOps):
                 'TokenAndPositionEmbedding': TokenAndPositionEmbedding,
                 'TransformerBlock': TransformerBlock,
                 'CustomSchedule': CustomSchedule}
+            output_model = OutputModel(task=task, framework='Keras')
             if load_model == 'train':
                 input_model = InputModel(model_id=model_id)
                 local_model_path = input_model.get_local_copy(force_download=False)
                 model = train_model(preload_model=True, model_path=local_model_path)
-                output_model = input_model 
             elif load_model == 'new':
                 model = train_model(preload_model=False)
-                output_model = OutputModel(task=task, framework='Keras')
-
             callbacks = self.get_callbacks(self.combined_params['clearml_output_uri'])
             self.train_and_evaluate(model, train_ds, val_ds, test_ds, callbacks, task)
-            
             model_filename = os.path.join(self.combined_params['clearml_output_uri'], f"{self.combined_params['model_name']}_{task.id}.keras")
             model.save(model_filename)
             output_model.update_weights(weights_filename=model_filename)
-            
             task.close()
-            task.mark_completed()
