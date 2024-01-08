@@ -146,7 +146,7 @@ class ClearMLOpsTraining(ClearMLOps):
         logger.flush()
 
     def run_clearml_training_task(self, task_name, dataset_id=None, load_model='new', model_id=None):
-        task = Task.init(project_name=self.combined_params['clearml_project_name'], task_name=task_name, task_type=Task.TaskTypes.training)
+        task = Task.init(project_name=self.combined_params['clearml_project_name'], task_name=task_name, auto_connect_frameworks={'tensorboard': True}, task_type=Task.TaskTypes.training)
         task.connect(self.combined_params)
         if task:
             combined_dataset = self.load_dataset(dataset_id or self.get_latest_datasets(self.combined_params['clearml_project_name'])['id'])

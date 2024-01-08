@@ -4,7 +4,7 @@ import glob
 import os
 import logging
 from datetime import datetime
-from utils.fnProcessing import remove_urls, remove_whitespace
+from generative_text.general_tnn_generative.fnProcessing import remove_urls, remove_whitespace
 
 logging.basicConfig(level=logging.INFO)
 
