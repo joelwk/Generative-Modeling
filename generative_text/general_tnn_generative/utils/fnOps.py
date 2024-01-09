@@ -61,8 +61,8 @@ class ClearMLOps:
         except Exception as e:
             print(f"Failed to upload dataset to ClearML: {e}")
 
-    def load_dataset(self, dataset_id=None):
-        dataset = ClearMLDataset.get(dataset_id=dataset_id)
+    def load_dataset(self, dataset_id):
+        dataset = ClearMLDataset.get(dataset_id=dataset_id, alias=f'{dataset_id}')
         local_copy_path = dataset.get_local_copy()
         try:
             df = pd.read_parquet(local_copy_path)
@@ -149,8 +149,11 @@ class ClearMLOpsTraining(ClearMLOps):
         task = Task.init(project_name=self.combined_params['clearml_project_name'], task_name=task_name, auto_connect_frameworks={'tensorboard': True}, task_type=Task.TaskTypes.training)
         task.connect(self.combined_params)
         if task:
-            combined_dataset = self.load_dataset(dataset_id or self.get_latest_datasets(self.combined_params['clearml_project_name'])['id'])
-            train_ds, val_ds, test_ds, combined_vocab = main(combined_dataset, input_col='text', clean_col='text')
+            if dataset_id:
+                combined_dataset = self.load_dataset(dataset_id)
+                train_ds, val_ds, test_ds, combined_vocab = main(combined_dataset, input_col='text', clean_col='text')
+            else:
+                train_ds, val_ds, test_ds, combined_vocab = self.get_latest_datasets(self.combined_params['clearml_project_name'])['id']
             custom_objects = {
                 'TokenAndPositionEmbedding': TokenAndPositionEmbedding,
                 'TransformerBlock': TransformerBlock,
