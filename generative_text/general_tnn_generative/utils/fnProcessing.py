@@ -28,7 +28,7 @@ url_regex = re.compile(r'http\S+|www.\S+')
 whitespace_regex = re.compile(r'\s+')
 punctuation_regex = re.compile(f"([{string.punctuation}])")
 non_alphanumeric_regex = re.compile(r'[^a-zA-Z0-9.,!?\' ]')
-contraction_mapping = pd.read_json('./generative_text/general_tnn_generative/utils/contraction_mapping.json', typ='series').to_dict()
+contraction_mapping = pd.read_json('./utils/contraction_mapping.json', typ='series').to_dict()
 
 def pad_punctuation(s):
     if not isinstance(s, str):

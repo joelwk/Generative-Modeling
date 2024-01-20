@@ -1,11 +1,14 @@
 import pandas as pd
 import random
+import numpy as np
 import glob
 import os
 import logging
+import warnings
 from datetime import datetime
-from generative_text.general_tnn_generative.fnProcessing import remove_urls, remove_whitespace
+from utils.fnProcessing import remove_whitespace
 
+warnings.simplefilter(action='ignore', category=FutureWarning)
 logging.basicConfig(level=logging.INFO)
 
 def stratified_sample(data, strata_column, sample_ratio):
@@ -54,9 +57,12 @@ def sample_by_datetime(directory, time_column, freq, sample_ratio, datetime_form
         data['temp_time_column'] = pd.to_datetime(data[time_column], format=datetime_format, errors='coerce')
         if start_date or end_date:
             data = data[(data['temp_time_column'].notnull()) & (data['temp_time_column'].between(start_date, end_date))]
-        stratified_data = stratified_sample_by_time(data, time_column, freq, sample_ratio, datetime_format)        
+        stratified_data = stratified_sample_by_time(data, time_column, freq, sample_ratio, datetime_format)
+        stratified_data = stratified_data.dropna(axis=1, how='all')
+        if not all_sampled_data.empty:
+            stratified_data = stratified_data.reindex(columns=all_sampled_data.columns, fill_value=np.nan)
         all_sampled_data = pd.concat([all_sampled_data, stratified_data], ignore_index=True)
-    return all_sampled_data
+    return all_sampled_data.dropna(subset=['text_clean'])
 
 def count_total_rows(directory):
     total_rows = 0
