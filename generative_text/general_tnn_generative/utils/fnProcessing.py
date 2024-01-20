@@ -31,16 +31,17 @@ punctuation_regex = re.compile(f"([{string.punctuation}])")
 non_alphanumeric_regex = re.compile(r'[^a-zA-Z0-9.,!?\' ]')
 contraction_mapping = pd.read_json('./generative_text/general_tnn_generative/utils/contraction_mapping.json', typ='series').to_dict()
 config = read_config(section="params", config_path=config_path)
-config_params = read_config(section="process-config")
+config_params = read_config(section="process-config", config_path=config_path)
 
 def pad_punctuation(s):
-    if config_params.get("padding", "False"):
+    if config_params.get("padding", "False") == True:
         if not isinstance(s, str):
             return ""
         s = punctuation_regex.sub(r" \1 ", s)
+        print(s)
         return whitespace_regex.sub(' ', s).strip()
-    pass
-
+    return s
+    
 def normalize_text(text):
     if isinstance(text, str):
         try:
@@ -48,9 +49,9 @@ def normalize_text(text):
             text = normalize('NFKD', text).encode('ascii', 'ignore').decode('utf-8', 'ignore')
             text = ' '.join(BeautifulSoup(text, 'html.parser').stripped_strings)
             text = re.sub(r'>>\d+', ' ', text)
-            if config_params.get("contraction_mapping", "False"):
+            if config_params.get("contraction_mapping", "False") == True:
                 text = ' '.join(contraction_mapping.get(t, t) for t in text.split())
-            if config_params.get("non_alpha_numeric", "False"):
+            if config_params.get("non_alpha_numeric", "False") == True:
                 text = non_alphanumeric_regex.sub(' ', text)
             return whitespace_regex.sub(' ', text).strip()
         except ValueError:
