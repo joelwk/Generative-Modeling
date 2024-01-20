@@ -12,6 +12,7 @@ from profanity import profanity
 
 warnings.filterwarnings("ignore", category=MarkupResemblesLocatorWarning)
 warnings.filterwarnings("ignore", category=UserWarning, module='bs4')
+config_path='./generative_text/configkeras.ini'
 
 def read_config(section="params", config_path='./../'):
     if not os.path.exists(config_path):
@@ -28,13 +29,17 @@ url_regex = re.compile(r'http\S+|www.\S+')
 whitespace_regex = re.compile(r'\s+')
 punctuation_regex = re.compile(f"([{string.punctuation}])")
 non_alphanumeric_regex = re.compile(r'[^a-zA-Z0-9.,!?\' ]')
-contraction_mapping = pd.read_json('./utils/contraction_mapping.json', typ='series').to_dict()
+contraction_mapping = pd.read_json('./generative_text/general_tnn_generative/utils/contraction_mapping.json', typ='series').to_dict()
+config = read_config(section="params", config_path=config_path)
+config_params = read_config(section="process-config")
 
 def pad_punctuation(s):
-    if not isinstance(s, str):
-        return ""
-    s = punctuation_regex.sub(r" \1 ", s)
-    return whitespace_regex.sub(' ', s).strip()
+    if config_params.get("padding", "False"):
+        if not isinstance(s, str):
+            return ""
+        s = punctuation_regex.sub(r" \1 ", s)
+        return whitespace_regex.sub(' ', s).strip()
+    pass
 
 def normalize_text(text):
     if isinstance(text, str):
@@ -43,8 +48,10 @@ def normalize_text(text):
             text = normalize('NFKD', text).encode('ascii', 'ignore').decode('utf-8', 'ignore')
             text = ' '.join(BeautifulSoup(text, 'html.parser').stripped_strings)
             text = re.sub(r'>>\d+', ' ', text)
-            text = ' '.join(contraction_mapping.get(t, t) for t in text.split())
-            text = non_alphanumeric_regex.sub(' ', text)
+            if config_params.get("contraction_mapping", "False"):
+                text = ' '.join(contraction_mapping.get(t, t) for t in text.split())
+            if config_params.get("non_alpha_numeric", "False"):
+                text = non_alphanumeric_regex.sub(' ', text)
             return whitespace_regex.sub(' ', text).strip()
         except ValueError:
             return text
