@@ -34,7 +34,7 @@ config = read_config(section="params", config_path=config_path)
 config_params = read_config(section="process-config", config_path=config_path)
 
 def pad_punctuation(s):
-    if config_params.get("padding", "False") == True:
+    if string_to_bool(config_params.get("padding", "False")):
         if not isinstance(s, str):
             return ""
         s = punctuation_regex.sub(r" \1 ", s)
@@ -49,9 +49,9 @@ def normalize_text(text):
             text = normalize('NFKD', text).encode('ascii', 'ignore').decode('utf-8', 'ignore')
             text = ' '.join(BeautifulSoup(text, 'html.parser').stripped_strings)
             text = re.sub(r'>>\d+', ' ', text)
-            if config_params.get("contraction_mapping", "False") == True:
+            if string_to_bool(config_params.get("contraction_mapping", "False")):
                 text = ' '.join(contraction_mapping.get(t, t) for t in text.split())
-            if config_params.get("non_alpha_numeric", "False") == True:
+            if string_to_bool(config_params.get("non_alpha_numeric", "False")):
                 text = non_alphanumeric_regex.sub(' ', text)
             return whitespace_regex.sub(' ', text).strip()
         except ValueError:
@@ -121,3 +121,6 @@ def load_csvs(directory_path, starts_with):
             dataframes.append(df)
     data = pd.concat(dataframes, ignore_index=True)
     return data
+
+def string_to_bool(string_value):
+    return string_value.lower() in ['true', '1', 't', 'y', 'yes', 'on']

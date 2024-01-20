@@ -1,6 +1,7 @@
 
-from generative_text.general_tnn_generative.utils.fnProcessing import read_config, pad_punctuation, normalize_text, remove_whitespace
-config_params = read_config(section='params', config_path='./generative_text/configkeras.ini')
+from generative_text.general_tnn_generative.utils.fnProcessing import read_config, pad_punctuation, normalize_text, remove_whitespace, string_to_bool
+config_params = read_config(section='params')
+config_config_params = read_config(section='process-config')
 params = {key: config_params[key] for key in config_params}
 
 import tensorflow as tf
@@ -35,17 +36,25 @@ def get_datasets(text_data):
 def main(data, input_col='text', clean_col='text'):
     max_len = int(params['max_len'])
     vocab_size = int(params['vocab_size'])
-    clean_data = prepare_data(data, input_col, clean_col)
-    text_data = [text[:max_len] for text in clean_data[clean_col].tolist()]
-    text_data = [text.lower() for text in text_data]
-    vectorize_layer = tf.keras.layers.TextVectorization(
-        standardize=None,
-        max_tokens=vocab_size,
-        output_mode="int",
-        output_sequence_length=max_len + 1)
-    train_text_ds, val_text_ds, test_text_ds = get_datasets(text_data)
-    vectorize_layer.adapt(train_text_ds)
-
+    if data is None or data.empty:
+        raise ValueError("Data is None or empty, cannot proceed with processing.")
+    max_len = int(params['max_len'])
+    vocab_size = int(params['vocab_size'])
+    if clean_col not in data.columns:
+        raise ValueError(f"Column '{clean_col}' not found in data.")
+    if string_to_bool(config_config_params.get("process_data", "False")):
+        data = prepare_data(data, input_col, clean_col)
+    if data is not None:
+        text_data = [text[:max_len] if text is not None else "" for text in data[clean_col].tolist()]
+        text_data = [text.lower() for text in text_data]
+        vectorize_layer = tf.keras.layers.TextVectorization(
+            standardize=None,
+            max_tokens=vocab_size,
+            output_mode="int",
+            output_sequence_length=max_len + 1)
+        train_text_ds, val_text_ds, test_text_ds = get_datasets(text_data)
+        vectorize_layer.adapt(train_text_ds)
+        
     def prepare_lm_inputs_labels(text):
         text = tf.expand_dims(text, -1)
         tokenized_sentences = vectorize_layer(text)
