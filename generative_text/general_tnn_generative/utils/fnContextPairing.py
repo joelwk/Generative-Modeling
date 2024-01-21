@@ -1,6 +1,8 @@
 import pandas as pd
 import spacy
+import os
 import re
+import json
 import lxml.etree as letree
 import mwparserfromhell
 import configparser
@@ -10,14 +12,17 @@ from unicodedata import normalize
 from bs4 import BeautifulSoup, MarkupResemblesLocatorWarning
 from multiprocessing import Pool
 from generative_text.general_tnn_generative.utils.fnProcessing import read_config, remove_whitespace, normalize_text
+from functools import partial
+
+nlp = spacy.load("en_core_web_sm")
 
 class ContextPairing:
-    def __init__(self, path_to_dump_file, included_entity_labels, config_path='./generative_text/configkeras.ini'):
+    def __init__(self, data, path_to_dump_file, included_entity_labels, config_path='./generative_text/configkeras.ini'):
         self.nlp = spacy.load("en_core_web_sm")
         self.path_to_dump_file = path_to_dump_file
         self.included_entity_labels = included_entity_labels
         self.found_titles = set()
-        self.data = None
+        self.data = data
         self.config_params = read_config(section='process-config', config_path=config_path)
 
     def chunkify(self, chunk_size=10000):
@@ -87,10 +92,11 @@ class ContextPairing:
 
     def process_chunks(self, context_chunks, keywords):
         with Pool(processes=4) as pool:
+            process_chunk_func = partial(self.process_article_chunk, keywords=keywords)
             for chunk in context_chunks:
                 if self.found_titles == keywords.keys():
                     break
-                results = pool.apply_async(process_article_chunk, args=(chunk, keywords))
+                results = pool.apply_async(process_chunk_func, args=(chunk,))
                 yield from results.get()
 
     def save_context(self, id_int, topic, entity_tagged_sentences, filtered_df, keywords, relevant_articles_df, context_data):
@@ -110,17 +116,17 @@ class ContextPairing:
         print(f'Saved {topic} data to {dir_loc}')
         
     def save_data(self):
-        if data is not None:
+        if self.data is not None:
           dir_loc = os.path.join(self.config_params['dir_loc'], self.config_params['topic'])
           file_name = f"data_{self.config_params['topic']}_{self.config_params['topic_id']}.csv"
           file_path = os.path.join(dir_loc, self.config_params['dir_loc'], file_name)
-          data.to_csv(file_path, index=False)
+          self.data.to_csv(file_path, index=False)
           print(f"Data saved to {file_path}")
         else:
             print("No data to save.")
 
-    def run(self, data):
-        entity_tagged_sentences = self.extract_entities_and_sentences(data.drop_duplicates(subset='thread_id'))
+    def run(self):
+        entity_tagged_sentences = self.extract_entities_and_sentences(self.data.drop_duplicates(subset='thread_id'))
         filtered_df = self.filter_entities_and_create_dataframe(entity_tagged_sentences)
         keywords = self.extract_keywords_from_entities(filtered_df)
         context_chunks = self.chunkify()
