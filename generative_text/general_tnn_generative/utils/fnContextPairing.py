@@ -9,16 +9,16 @@ import string
 from unicodedata import normalize
 from bs4 import BeautifulSoup, MarkupResemblesLocatorWarning
 from multiprocessing import Pool
-from utils.fnProcessing import read_config
-
-config_params = read_config(section="process-config")
+from generative_text.general_tnn_generative.utils.fnProcessing import read_config, remove_whitespace, normalize_text
 
 class ContextPairing:
-    def __init__(self, path_to_dump_file, included_entity_labels):
+    def __init__(self, path_to_dump_file, included_entity_labels, config_path='./generative_text/configkeras.ini'):
         self.nlp = spacy.load("en_core_web_sm")
         self.path_to_dump_file = path_to_dump_file
         self.included_entity_labels = included_entity_labels
         self.found_titles = set()
+        self.data = None
+        self.config_params = read_config(section='process-config', config_path=config_path)
 
     def chunkify(self, chunk_size=10000):
         context = letree.iterparse(self.path_to_dump_file, events=('end',), tag='{http://www.mediawiki.org/xml/export-0.10/}page')
@@ -72,7 +72,6 @@ class ContextPairing:
         wikicode = mwparserfromhell.parse(text)
         return {"title": title, "text": wikicode.strip_code().strip()}
 
-    found_titles = set()
     def process_article_chunk(self, chunk, keywords):
         global found_titles
         relevant_articles = []
@@ -89,12 +88,15 @@ class ContextPairing:
     def process_chunks(self, context_chunks, keywords):
         with Pool(processes=4) as pool:
             for chunk in context_chunks:
-                if found_titles == keywords.keys():
+                if self.found_titles == keywords.keys():
                     break
                 results = pool.apply_async(process_article_chunk, args=(chunk, keywords))
                 yield from results.get()
-    def save_context(self, id_int, topic, entity_tagged_sentences, filtered_df, keywords, relevant_articles_df, training_data):
-        dir_loc = os.path.join(config_params['dir_loc'], topic)
+
+    def save_context(self, id_int, topic, entity_tagged_sentences, filtered_df, keywords, relevant_articles_df, context_data):
+        dir_loc = os.path.join(self.config_params['dir_loc'], topic)
+        if not os.path.exists(dir_loc):
+            os.makedirs(dir_loc)
         with open(os.path.join(dir_loc, f'labels_{id_int}_{topic}.txt'), 'w') as file:
             for label in self.included_entity_labels:
                 file.write(f"{label}\n")
@@ -104,8 +106,18 @@ class ContextPairing:
         keywords_df = pd.DataFrame(list(keywords.items()), columns=['Keyword', 'thread_id'])
         keywords_df.to_csv(os.path.join(dir_loc, f'keywords_{id_int}_{topic}.csv'), index=False)
         relevant_articles_df.to_csv(os.path.join(dir_loc, f'articles_{id_int}_{topic}.csv'), index=False)
-        training_data.to_csv(os.path.join(dir_loc, f'context_{topic}_{id_int}.csv'), index=False)
+        context_data.to_csv(os.path.join(dir_loc, f'context_{topic}_{id_int}.csv'), index=False)
         print(f'Saved {topic} data to {dir_loc}')
+        
+    def save_data(self):
+        if data is not None:
+          dir_loc = os.path.join(self.config_params['dir_loc'], self.config_params['topic'])
+          file_name = f"data_{self.config_params['topic']}_{self.config_params['topic_id']}.csv"
+          file_path = os.path.join(dir_loc, self.config_params['dir_loc'], file_name)
+          data.to_csv(file_path, index=False)
+          print(f"Data saved to {file_path}")
+        else:
+            print("No data to save.")
 
     def run(self, data):
         entity_tagged_sentences = self.extract_entities_and_sentences(data.drop_duplicates(subset='thread_id'))
@@ -116,4 +128,6 @@ class ContextPairing:
         relevant_articles_df = pd.DataFrame(relevant_articles)
         data_test_train = relevant_articles_df[relevant_articles_df['text'] != ''].dropna(subset=['text']).drop_duplicates(subset=['text'])
         data_test_train["text_clean"] = data_test_train["text"].apply(remove_whitespace).apply(normalize_text).astype(str)
-        training_data = pd.concat([filtered_df.rename(columns={'sentence':'text'}), data_test_train[~data_test_train['text'].str.contains('REDIRECT', na=False)]])[['text','thread_id']]
+        context_data = pd.concat([filtered_df.rename(columns={'sentence':'text'}), data_test_train[~data_test_train['text'].str.contains('REDIRECT', na=False)]])[['text','thread_id']]
+        self.save_context(self.config_params['topic_id'], self.config_params['topic'], entity_tagged_sentences, filtered_df, keywords, relevant_articles_df, context_data)
+        self.save_data()
