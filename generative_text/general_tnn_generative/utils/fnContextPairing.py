@@ -99,27 +99,28 @@ class ContextPairing:
                 results = pool.apply_async(process_chunk_func, args=(chunk,))
                 yield from results.get()
 
-    def save_context(self, id_int, topic, entity_tagged_sentences, filtered_df, keywords, relevant_articles_df, context_data):
+    def save_context(self, id_int, topic, entity_tagged_sentences, filtered_df, keywords, relevant_articles_df, context_data, data):
+        data_size = len(data)
         dir_loc = os.path.join(self.config_params['dir_loc'], topic)
         if not os.path.exists(dir_loc):
             os.makedirs(dir_loc)
-        with open(os.path.join(dir_loc, f'labels_{id_int}_{topic}.txt'), 'w') as file:
+        with open(os.path.join(dir_loc, f'labels_{id_int}_{topic}_{data_size}.txt'), 'w') as file:
             for label in self.included_entity_labels:
                 file.write(f"{label}\n")
-        with open(os.path.join(dir_loc, f'entity_tagged_sentences_{topic}_{id_int}.json'), 'w') as file:
+        with open(os.path.join(dir_loc, f'entity_tagged_sentences_{id_int}_{topic}_{data_size}.json'), 'w') as file:
             json.dump(entity_tagged_sentences, file)
-        filtered_df.to_csv(os.path.join(dir_loc, f'matched_{id_int}_{topic}.csv'), index=False)
+        filtered_df.to_csv(os.path.join(dir_loc, f'matched_{id_int}_{topic}_{data_size}.csv'), index=False)
         keywords_df = pd.DataFrame(list(keywords.items()), columns=['Keyword', 'thread_id'])
-        keywords_df.to_csv(os.path.join(dir_loc, f'keywords_{id_int}_{topic}.csv'), index=False)
-        relevant_articles_df.to_csv(os.path.join(dir_loc, f'articles_{id_int}_{topic}.csv'), index=False)
-        context_data.to_csv(os.path.join(dir_loc, f'context_{topic}_{id_int}.csv'), index=False)
+        keywords_df.to_csv(os.path.join(dir_loc, f'keywords_{id_int}_{topic}_{data_size}.csv'), index=False)
+        relevant_articles_df.to_csv(os.path.join(dir_loc, f'articles_{id_int}_{topic}_{data_size}.csv'), index=False)
+        context_data.to_csv(os.path.join(dir_loc, f'context_{id_int}_{topic}_{data_size}.csv'), index=False)
         print(f'Saved {topic} data to {dir_loc}')
         
     def save_data(self):
         if self.data is not None:
           dir_loc = os.path.join(self.config_params['dir_loc'], self.config_params['topic'])
-          file_name = f"data_{self.config_params['topic']}_{self.config_params['topic_id']}.csv"
-          file_path = os.path.join(dir_loc, self.config_params['dir_loc'], file_name)
+          file_name = f"data_{self.config_params['topic_id']}_{self.config_params['topic']}_{len(self.data)}.csv"
+          file_path = os.path.join(self.config_params['dir_loc'], file_name)
           self.data.to_csv(file_path, index=False)
           print(f"Data saved to {file_path}")
         else:
@@ -135,5 +136,5 @@ class ContextPairing:
         data_test_train = relevant_articles_df[relevant_articles_df['text'] != ''].dropna(subset=['text']).drop_duplicates(subset=['text'])
         data_test_train["text_clean"] = data_test_train["text"].apply(remove_whitespace).apply(normalize_text).astype(str)
         context_data = pd.concat([filtered_df.rename(columns={'sentence':'text'}), data_test_train[~data_test_train['text'].str.contains('REDIRECT', na=False)]])[['text','thread_id']]
-        self.save_context(self.config_params['topic_id'], self.config_params['topic'], entity_tagged_sentences, filtered_df, keywords, relevant_articles_df, context_data)
+        self.save_context(self.config_params['topic_id'], self.config_params['topic'], entity_tagged_sentences, filtered_df, keywords, relevant_articles_df, context_data, self.data)
         self.save_data()
