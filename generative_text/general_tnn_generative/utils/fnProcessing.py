@@ -47,6 +47,10 @@ def normalize_text(text):
         try:
             text = url_regex.sub(lambda m: urlparse(m.group(0)).netloc.replace('www.', ''), text)
             text = normalize('NFKD', text).encode('ascii', 'ignore').decode('utf-8', 'ignore')
+            # Remove wiki section headers
+            text = re.sub(r'\n\n.*?\n\n', ' ', text)
+            # Remove single newline characters
+            text = text.replace('\n', ' ')
             text = ' '.join(BeautifulSoup(text, 'html.parser').stripped_strings)
             text = re.sub(r'>>\d+', ' ', text)
             if string_to_bool(config_params.get("contraction_mapping", "False")):

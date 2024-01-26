@@ -1,6 +1,6 @@
 # Generative Modeling
 Experiment and showcase custom or pre-built generative models with ClearML experiment management.
-## Overview
+## Generative Architecture
 ### 1. **General text generation (`/generative_text/general_tnn_generative`)**
 
 #### `tnn.py` - Transformer-based neural network, specifically designed for generative text tasks in TensorFlow. 
@@ -21,3 +21,8 @@ Key parameters `max_len`, `vocab_size`, `embedding_dim` are configurable, allowi
 4. **TrainTextGenerator Callback**: A custom callback class for generating text at the end of each training epoch. It uses a temperature-based sampling method to generate text, which can be used for monitoring the model's performance during training.
 
 Important features for analysis and debugging include **TensorBoard logging**, returned attention scores, **temperature-based sampling** which allows for controlling the randomness of the generated text.
+
+
+## Dataset Curation Overview
+### 1. **Context Pairing (`/generative_text/general_tnn_generative/utils/fnContextPairing.py`)**
+The `ContextPairing.py` is designed for processing and correlating text data with relevant Wikipedia articles. Its primary function is to analyze a given dataset, extract specific entities, and match these entities with the summaries of corresponding Wikipedia articles. Each matched entity in the data is linked to the summary of a relevant Wikipedia article, thereby enriching the original dataset with contextual information.

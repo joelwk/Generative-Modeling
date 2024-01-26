@@ -6,7 +6,7 @@ import os
 import logging
 import warnings
 from datetime import datetime
-from utils.fnProcessing import remove_whitespace
+from generative_text.general_tnn_generative.utils.fnProcessing import remove_whitespace
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
 logging.basicConfig(level=logging.INFO)

@@ -5,6 +5,7 @@ import os
 import tensorflow as tf
 from tensorflow.keras.models import load_model
 from tensorflow.keras.utils import custom_object_scope
+from tensorflow.keras.preprocessing.sequence import pad_sequences
 from generative_text.general_tnn_generative.tnn import TransformerBlock, TokenAndPositionEmbedding
 from generative_text.general_tnn_generative.utils.fnProcessing import read_config
 
@@ -13,11 +14,11 @@ params = {key: config_params[key] for key in config_params}
 
 max_len = int(params['max_len'])
 vocab_size = int(params['vocab_size'])
-embedding_dim = int(params['embedding_dim'])
 num_heads = int(params['n_heads'])
 num_layers = int(params['n_layers'])
 key_dim = int(params['key_dim'])
-ff_dim = int(params['feed_forward_dim'])
+embedding_dim = key_dim * num_heads
+ff_dim = embedding_dim * int(params['ff_multiplier'])
 dropout_rate = float(params['dropout'])
 warmup_steps = int(params['warmup_steps'])
 activation = params['activation']

@@ -22,8 +22,8 @@ class ContextPairing:
         self.path_to_dump_file = path_to_dump_file
         self.included_entity_labels = included_entity_labels
         self.found_titles = set()
-        self.data = data
         self.config_params = read_config(section='process-config', config_path=config_path)
+        self.data = data
 
     def chunkify(self, chunk_size=10000):
         context = letree.iterparse(self.path_to_dump_file, events=('end',), tag='{http://www.mediawiki.org/xml/export-0.10/}page')
@@ -56,8 +56,7 @@ class ContextPairing:
                     'entities': [ent.text for ent in sentence.ents],
                     'entity_labels': [ent.label_ for ent in sentence.ents],
                     'posted_date_time': posted_date,
-                    'thread_id': thread_id
-                }
+                    'thread_id': thread_id}
                 result.append(sentence_info)
             return result
         rows = data.apply(extraction, axis=1)
@@ -66,27 +65,30 @@ class ContextPairing:
     def filter_entities_and_create_dataframe(self, entity_tagged_sentences):
         return pd.DataFrame([info for info in entity_tagged_sentences if any(label in self.included_entity_labels for label in info['entity_labels'])])
 
-    def extract_keywords_from_entities(self, filtered_df):
-        keywords = {}
-        for _, row in filtered_df.iterrows():
-            for entity in row['entities']:
-                keywords[entity.lower()] = row['thread_id']
-        return keywords
-
     def process_page(self, title, text):
         wikicode = mwparserfromhell.parse(text)
         return {"title": title, "text": wikicode.strip_code().strip()}
 
+    def extract_keywords_from_entities(self, filtered_df):
+        keywords = {}
+        for _, row in filtered_df.iterrows():
+            for entity in row['entities']:
+                entity_lower = entity.lower()
+                if entity_lower not in keywords:
+                    keywords[entity_lower] = []
+                keywords[entity_lower].append(row['thread_id'])
+        return keywords
+
     def process_article_chunk(self, chunk, keywords):
-        global found_titles
         relevant_articles = []
         for title, text in chunk:
             title_lower = title.lower()
             if title_lower in keywords and title_lower not in self.found_titles:
-                thread_id = keywords[title_lower]
-                article = self.process_page(title, text)
-                article['thread_id'] = thread_id
-                relevant_articles.append(article)
+                thread_ids = keywords[title_lower]
+                for thread_id in thread_ids:
+                    article = self.process_page(title, text)
+                    article['thread_id'] = thread_id
+                    relevant_articles.append(article)
                 self.found_titles.add(title_lower)
         return relevant_articles
 
@@ -120,12 +122,12 @@ class ContextPairing:
         if self.data is not None:
           dir_loc = os.path.join(self.config_params['dir_loc'], self.config_params['topic'])
           file_name = f"data_{self.config_params['topic_id']}_{self.config_params['topic']}_{len(self.data)}.csv"
-          file_path = os.path.join(self.config_params['dir_loc'], file_name)
+          file_path = os.path.join(self.config_params['dir_loc'],self.config_params['topic'], file_name)
           self.data.to_csv(file_path, index=False)
           print(f"Data saved to {file_path}")
         else:
             print("No data to save.")
-
+                
     def run(self):
         entity_tagged_sentences = self.extract_entities_and_sentences(self.data.drop_duplicates(subset='thread_id'))
         filtered_df = self.filter_entities_and_create_dataframe(entity_tagged_sentences)
@@ -133,8 +135,13 @@ class ContextPairing:
         context_chunks = self.chunkify()
         relevant_articles = list(self.process_chunks(context_chunks, keywords))
         relevant_articles_df = pd.DataFrame(relevant_articles)
-        data_test_train = relevant_articles_df[relevant_articles_df['text'] != ''].dropna(subset=['text']).drop_duplicates(subset=['text'])
-        data_test_train["text_clean"] = data_test_train["text"].apply(remove_whitespace).apply(normalize_text).astype(str)
-        context_data = pd.concat([filtered_df.rename(columns={'sentence':'text'}), data_test_train[~data_test_train['text'].str.contains('REDIRECT', na=False)]])[['text','thread_id']]
+        relevant_articles_df = relevant_articles_df.dropna(subset=['text'])
+        relevant_articles_df["text_clean"] = relevant_articles_df["text"].apply(remove_whitespace).apply(normalize_text).astype(str)
+        contains_list = ['redirect', 'REDIRECT', 'Redirect']
+        relevant_articles_df = relevant_articles_df[~relevant_articles_df['text'].str.contains('|'.join(contains_list), na=False)]
+        self.data.reset_index(drop=True, inplace=True)
+        relevant_articles_df.reset_index(drop=True, inplace=True)
+        context_data = pd.concat([self.data, relevant_articles_df], ignore_index=True)[['text', 'thread_id']]
+        context_data = context_data.dropna(subset=['text'])
         self.save_context(self.config_params['topic_id'], self.config_params['topic'], entity_tagged_sentences, filtered_df, keywords, relevant_articles_df, context_data, self.data)
         self.save_data()

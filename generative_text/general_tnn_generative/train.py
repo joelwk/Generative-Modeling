@@ -3,6 +3,7 @@ import configparser
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras import layers, models, losses, callbacks
+from tensorflow.keras.preprocessing.sequence import pad_sequences
 import traceback
 from tensorflow.keras.models import load_model 
 from generative_text.general_tnn_generative.tnn import TransformerBlock, TokenAndPositionEmbedding, causal_attention_mask
@@ -13,11 +14,11 @@ params = {key: config_params[key] for key in config_params}
 
 max_len = int(params['max_len'])
 vocab_size = int(params['vocab_size'])
-embedding_dim = int(params['embedding_dim'])
 num_heads = int(params['n_heads'])
 num_layers = int(params['n_layers'])
 key_dim = int(params['key_dim'])
-ff_dim = int(params['feed_forward_dim'])
+embedding_dim = key_dim * num_heads
+ff_dim = embedding_dim * int(params['ff_multiplier'])
 dropout_rate = float(params['dropout'])
 warmup_steps = int(params['warmup_steps'])
 activation = params['activation']
@@ -52,7 +53,7 @@ def train_model(preload_model=False, model_path=None):
     x = TokenAndPositionEmbedding(max_len, vocab_size, embedding_dim)(inputs)
     attention_scores_list = []
     for _ in range(num_layers): 
-        x, attention_scores = TransformerBlock(num_heads, key_dim, embedding_dim, ff_dim, activation)(x)
+        x, attention_scores = TransformerBlock(num_heads, key_dim, embedding_dim, ff_dim, dropout_rate)(x)
         attention_scores_list.append(attention_scores)
     outputs = layers.Dense(vocab_size, activation="softmax")(x)
     gpt = models.Model(inputs=inputs, outputs=[outputs] + attention_scores_list)
@@ -74,28 +75,27 @@ def train_model(preload_model=False, model_path=None):
     return gpt
 
 class TrainTextGenerator(callbacks.Callback):
-    def __init__(self, index_to_word, top_k=15):
+    def __init__(self, index_to_word, tokenizer, top_k=15):
         self.index_to_word = index_to_word
-        self.word_to_index = {
-            word: index for index, word in enumerate(index_to_word)
-        }
+        self.tokenizer = tokenizer
+        self.word_to_index = {word: index for index, word in enumerate(index_to_word)}
 
     def sample_from(self, probs, temperature):
         if temperature <= 0:
             raise ValueError("Temperature should be greater than 0.")
-        probs = probs ** (1 / temperature)
+        probs = np.ones(len(self.index_to_word)) * probs
         probs = probs / np.sum(probs)
-        return np.random.choice(len(probs), p=probs), probs
-    
+        return np.random.choice(len(self.index_to_word), p=probs), probs
+        
     def generate(self, start_prompt, max_tokens, temperature):
-        start_tokens = [
-            self.word_to_index.get(x, 1) for x in start_prompt.split()
-        ]
+        start_tokens = self.tokenizer([start_prompt])
+        start_tokens = np.array(start_tokens[0])
+        start_tokens = pad_sequences([start_tokens], maxlen=max_len, padding='post')
         sample_token = None
         info = []
         while len(start_tokens) < max_tokens and sample_token != 0:
-            x = np.array([start_tokens])
-            outputs = self.model.predict(x, verbose=0)
+            x = np.array(start_tokens).reshape(1, -1)
+            outputs = self.model.predict(x, verbose=1)
             y = outputs[0] 
             att = outputs[1:]
             sample_token, probs = self.sample_from(y[0][-1], temperature)
@@ -107,7 +107,7 @@ class TrainTextGenerator(callbacks.Callback):
                     "atts": reshaped_atts,
                 }
             )
-            start_tokens.append(sample_token)
+            start_tokens = np.append(start_tokens, sample_token)
             start_prompt = start_prompt + " " + self.index_to_word[sample_token]
         return info
 
@@ -116,5 +116,6 @@ class TrainTextGenerator(callbacks.Callback):
         for att in att_list:
             reshaped_atts.append(att[0, :, -1, :])
         return reshaped_atts
+
     def on_epoch_end(self, epoch, logs=None):
         self.generate("This year has been", max_tokens=max_len, temperature=1)
