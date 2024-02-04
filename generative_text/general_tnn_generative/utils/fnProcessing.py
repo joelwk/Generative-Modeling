@@ -5,6 +5,7 @@ import warnings
 import string
 from urllib.parse import urlparse
 from bs4 import BeautifulSoup,MarkupResemblesLocatorWarning
+from bs4 import BeautifulSoup,MarkupResemblesLocatorWarning
 from unicodedata import normalize
 import pandas as pd
 import numpy as np
@@ -29,9 +30,18 @@ url_regex = re.compile(r'http\S+|www.\S+')
 whitespace_regex = re.compile(r'\s+')
 punctuation_regex = re.compile(f"([{string.punctuation}])")
 non_alphanumeric_regex = re.compile(r'[^a-zA-Z0-9.,!?\' ]')
+punctuation_regex = re.compile(f"([{string.punctuation}])")
 contraction_mapping = pd.read_json('./generative_text/general_tnn_generative/utils/contraction_mapping.json', typ='series').to_dict()
 config = read_config(section="params", config_path=config_path)
 config_params = read_config(section="process-config", config_path=config_path)
+   
+wiki_markup_regex = re.compile(
+    r'thumb\|[\dpx]*\|?|'
+    r'right\|[\dpx]*\|?|'
+    r'left\|[\dpx]*\|?|'
+    r'center\|[\dpx]*\|?|'
+    r'[\dpx]+\|'
+)
 
 def pad_punctuation(s):
     if string_to_bool(config_params.get("padding", "False")):
@@ -45,18 +55,25 @@ def pad_punctuation(s):
 def normalize_text(text):
     if isinstance(text, str):
         try:
+            # Existing normalization steps
             text = url_regex.sub(lambda m: urlparse(m.group(0)).netloc.replace('www.', ''), text)
             text = normalize('NFKD', text).encode('ascii', 'ignore').decode('utf-8', 'ignore')
-            # Remove wiki section headers
-            text = re.sub(r'\n\n.*?\n\n', ' ', text)
-            # Remove single newline characters
+            text = wiki_markup_regex.sub('', text)  # Remove wiki markup
+            text = re.sub(r'\n\n.*?\n\n*?\n', ' ', text)
             text = text.replace('\n', ' ')
             text = ' '.join(BeautifulSoup(text, 'html.parser').stripped_strings)
             text = re.sub(r'>>\d+', ' ', text)
+            # Revised pattern to remove 'thumb|', 'px', '200px|', 'right|', and similar patterns
+            text = re.sub(r'thumb\|\d*x\d*px\|right\|', '', text)
+            text = re.sub(r'thumb\|\d*x\d*px\|', '', text)
+            text = re.sub(r'thumb\|', '', text)
+            text = re.sub(r'\d*x\d*px\|', '', text)
+            # Existing normalization steps continued
             if string_to_bool(config_params.get("contraction_mapping", "False")):
                 text = ' '.join(contraction_mapping.get(t, t) for t in text.split())
             if string_to_bool(config_params.get("non_alpha_numeric", "False")):
                 text = non_alphanumeric_regex.sub(' ', text)
+
             return whitespace_regex.sub(' ', text).strip()
         except ValueError:
             return text

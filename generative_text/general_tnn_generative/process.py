@@ -16,15 +16,16 @@ validation_split = float(params['validation_split'])
 base_max_len = int(params['max_len'])
 vocab_size = int(params['vocab_size'])
 
+def custom_standardization(input_data):
+    lowercase = tf.strings.lower(input_data)
+    stripped_html = tf.strings.regex_replace(lowercase, "<br />", " ")
+    return tf.strings.regex_replace(
+        stripped_html, "[%s]" % re.escape("!#$%&'()*+,-./:;<=>?@\^_`{|}~"), "")
+
 def prepare_data(data, input_col, clean_col):
     data[input_col] = data[input_col].astype(str)
     data[clean_col] = data[input_col].apply(normalize_text).apply(remove_whitespace).apply(pad_punctuation)
     return data[data[clean_col].notnull() & data[clean_col].str.strip().astype(bool)]
-
-def dynamic_pad_sequences(batch, padding_value=0):
-    max_len = max([len(x) for x in batch])
-    padded_batch = [x + [padding_value] * (max_len - len(x)) for x in batch]
-    return np.array(padded_batch)
 
 def get_datasets(text_data):
     test_split = float(validation_split / 2)
@@ -51,7 +52,7 @@ def main(data, input_col='text', clean_col='text'):
     if data is not None:
         text_data = [text.lower() for text in data[clean_col].tolist()]
         vectorize_layer = tf.keras.layers.TextVectorization(
-            standardize=None,
+            standardize=custom_standardization,
             max_tokens=vocab_size,
             output_mode="int")
         train_text_ds, val_text_ds, test_text_ds = get_datasets(text_data)

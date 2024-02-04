@@ -53,9 +53,7 @@ class ClearMLOps:
     def upload_dataset_to_clearml(self, dataset_uri, dataset_name):
         try:
             clearml_dataset = ClearMLDataset.create(dataset_project=self.clearml_params['clearml_project_name'], dataset_name=dataset_name)
-            # This should only recieve dataset_uri (not filename)
             clearml_dataset.add_files(dataset_uri)
-            # Do not pass an output uri since we have it saved already locally
             clearml_dataset.finalize(auto_upload=True)
             print(f"Uploaded {dataset_name} to ClearML.")
         except Exception as e:
@@ -96,7 +94,7 @@ class ClearMLOps:
     def get_training_set(self, task_name):
         dataset_info = self.get_latest_datasets(project_name= self.clearml_params['clearml_project_name'])
         combined_dataset = self.load_dataset(dataset_info['id'])
-        train_ds, val_ds, test_ds, combined_vocab = main(combined_dataset, input_col='text', clean_col='text')
+        train_ds, val_ds, test_ds, combined_vocab, tokenizer = main(combined_dataset, input_col='text', clean_col='text')
         return train_ds, val_ds, test_ds, combined_vocab
 
     def list_models(self, project_name):
@@ -124,7 +122,7 @@ class ClearMLOpsTraining(ClearMLOps):
     def get_callbacks(self, task_output_uri):
         return [
             ModelCheckpoint(filepath=os.path.join(task_output_uri, 'best_model.keras'), monitor='val_loss', save_best_only=True, verbose=1),
-            EarlyStopping(monitor='val_loss', patience=6, restore_best_weights=True)]
+            EarlyStopping(monitor='val_loss', patience=15, restore_best_weights=True)]
 
     def train_and_evaluate(self, model, train_ds, val_ds, test_ds, callbacks, task):
         logger = task.get_logger()
@@ -151,9 +149,9 @@ class ClearMLOpsTraining(ClearMLOps):
         if task:
             if dataset_id:
                 combined_dataset = self.load_dataset(dataset_id)
-                train_ds, val_ds, test_ds, combined_vocab = main(combined_dataset, input_col='text', clean_col='text')
+                train_ds, val_ds, test_ds, combined_vocab, tokenizer = main(combined_dataset, input_col='text', clean_col='text')
             else:
-                train_ds, val_ds, test_ds, combined_vocab = self.get_latest_datasets(self.combined_params['clearml_project_name'])['id']
+                train_ds, val_ds, test_ds = self.get_latest_datasets(self.combined_params['clearml_project_name'])['id']
             custom_objects = {
                 'TokenAndPositionEmbedding': TokenAndPositionEmbedding,
                 'TransformerBlock': TransformerBlock,

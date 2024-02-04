@@ -24,35 +24,20 @@ warmup_steps = int(params['warmup_steps'])
 activation = params['activation']
 epsilon = float(params['epsilon'])
 
-class CustomSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
-    def __init__(self, key_dim, warmup_steps):
-        super().__init__()
-        self.key_dim = key_dim
-        self.warmup_steps = warmup_steps
-        self.d = tf.cast(self.key_dim, tf.float32)
-
-    def __call__(self, step):
-        step = tf.cast(step, dtype=tf.float32)
-        arg1 = tf.math.rsqrt(step)
-        arg2 = step * (self.warmup_steps ** -1.5)
-        return tf.math.rsqrt(self.d) * tf.math.minimum(arg1, arg2)
-
-    def get_config(self):
-        return {"key_dim": self.key_dim, "warmup_steps": self.warmup_steps}
-
 class TextGenerator:
-    def __init__(self, model, index_to_word, top_k=5, generation_type='general', beam_width=3, sampling_type='top_k', top_p=0.9):
+    def __init__(self, model, max_len, vocab, vectorize_layer, top_k=40, top_p=0.9, sampling_type='random', temperature=1.0):
         self.model = model
-        self.index_to_word = index_to_word
-        self.word_to_index = {word: index for index, word in enumerate(index_to_word)}
+        self.max_len = max_len
+        self.vocab = vocab
+        self.vectorize_layer = vectorize_layer
+        self.index_to_word = {i: word for i, word in enumerate(vocab)}
         self.top_k = top_k
-        self.generation_type = generation_type
-        self.beam_width = beam_width
-        self.sampling_type = sampling_type
         self.top_p = top_p
+        self.sampling_type = sampling_type
+        self.temperature = temperature
 
     def sample_from(self, probs, temperature):
-        scaled_probs = probs ** (1 / temperature)
+        scaled_probs = np.exp(np.log(probs) / temperature)
         scaled_probs /= np.sum(scaled_probs)
         return np.random.choice(len(scaled_probs), p=scaled_probs), scaled_probs
 
@@ -60,73 +45,84 @@ class TextGenerator:
         probs = tf.nn.softmax(logits).numpy()
         if self.sampling_type == 'top_k':
             top_k_indices = tf.math.top_k(logits, k=self.top_k).indices.numpy()
-            logits = logits[top_k_indices]
-            probs = tf.nn.softmax(logits).numpy()
-            sample_token, _ = self.sample_from(probs, temperature)
-            return top_k_indices[sample_token]
+            top_k_logits = logits[top_k_indices]
+            top_k_probs = tf.nn.softmax(top_k_logits).numpy()
+            sample_index = np.random.choice(range(self.top_k), p=top_k_probs)
+            return top_k_indices[sample_index]
         elif self.sampling_type == 'top_p':
             sorted_indices = np.argsort(logits)[::-1]
             sorted_probs = tf.nn.softmax(logits[sorted_indices]).numpy()
             cumulative_probs = np.cumsum(sorted_probs)
-            filtered_indices = sorted_indices[cumulative_probs <= self.top_p]
-            sample_token, _ = self.sample_from(sorted_probs, temperature)
-            return filtered_indices[sample_token]
-
-    def reshape_attention(self, att_list):
-        return [att[0, :, -1, :] for att in att_list]
-
-    def generate(self, start_prompt, max_tokens, temperature):
-        start_tokens = [self.word_to_index.get(x, 1) for x in start_prompt.split()]
-        info = []
-        
-        def append_info(prompt, outputs, temperature, probs):
-            info.append({
-                "prompt": prompt,
-                "atts": self.reshape_attention(outputs[1:]),
-                "temperature": temperature,
-                "word_probs": probs
-            })
-        # Greedy generation
-        if self.generation_type == 'greedy':
-            while len(start_tokens) < max_tokens:
-                x = np.array([start_tokens])
-                outputs = self.model.predict(x)
-                y_probs = outputs[0][0][-1]
-                sample_token = np.argmax(y_probs)
-                append_info(start_prompt, outputs, temperature, y_probs)
-                if sample_token == 0: break
-                start_tokens.append(sample_token)
-                start_prompt += " " + self.index_to_word[sample_token]
-        # Beam search generation
-        elif self.generation_type == 'beam':
-            sequences = [[list(start_tokens), 0.0]]
-            for _ in range(max_tokens):
-                all_candidates = []
-                for seq in sequences:
-                    x = np.array([seq[0]])
-                    outputs = self.model.predict(x)
-                    y_probs = outputs[0][0][-1]
-                    probs = tf.nn.softmax(y_probs).numpy()
-                    top_indices = tf.math.top_k(y_probs, k=self.top_k).indices.numpy()
-                    for i in top_indices:
-                        candidate = [seq[0] + [i], seq[1] - np.log(probs[i])]
-                        all_candidates.append(candidate)
-                ordered = sorted(all_candidates, key=lambda tup: tup[1])
-                sequences = ordered[:self.beam_width]
-            start_tokens = sequences[0][0]
-            start_prompt = " ".join([self.index_to_word[token] for token in start_tokens])
-            append_info(start_prompt, outputs, temperature, y_probs)
-        # General generation
+            indices_to_remove = cumulative_probs > self.top_p
+            sorted_probs[indices_to_remove] = 0
+            sorted_probs /= np.sum(sorted_probs)
+            sample_index = np.random.choice(range(len(sorted_probs)), p=sorted_probs)
+            return sorted_indices[sample_index]
         else:
-            while len(start_tokens) < max_tokens:
-                x = np.array([start_tokens])
-                outputs = self.model.predict(x)
-                y_probs = outputs[0][0][-1]
-                sample_token, probs = self.sample_from(y_probs, temperature)
-                append_info(start_prompt, outputs, temperature, probs)
-                if sample_token == 0: break
-                start_tokens.append(sample_token)
-                start_prompt += " " + self.index_to_word[sample_token]
-        
-        print(f"\ngenerated text:\n{start_prompt}\n")
-        return info
+            return self.sample_from(probs, temperature)[0]
+
+    def _generate_text_base(self, user_input, sampling_func):
+        if user_input:
+            start_tokens = self.vectorize_layer([user_input])[0].numpy()
+            token_list = list(start_tokens)
+        else:
+            start_token = np.random.choice(len(self.vocab))
+            token_list = [start_token]
+        num_tokens_to_generate = self.max_len - len(token_list)
+        for _ in range(num_tokens_to_generate):
+            input_padded = self._prepare_input(token_list)
+            output_seq = self.model.predict(input_padded, verbose=0)
+            current_token_index = len(token_list) - 1
+            logits = output_seq[0][0, current_token_index, :]
+            next_token = sampling_func(logits, self.temperature)
+            token_list.append(next_token)
+            if next_token == 0:
+                break
+        generated_text = " ".join([self.index_to_word.get(token, '?') for token in token_list])
+        return generated_text.strip()
+
+    def random_sampling(self, logits, temperature):
+        sample_index, _ = self.sample_from(tf.nn.softmax(logits).numpy(), temperature)
+        return sample_index
+
+    def greedy_search(self, logits, _):
+        return np.argmax(logits)
+
+    def _prepare_input(self, token_list):
+        input_seq = tf.expand_dims(token_list, axis=0)
+        return pad_sequences(input_seq, maxlen=self.max_len, padding='post')
+
+    def beam_search(self, user_input, beam_size=3):
+        if user_input:
+            start_tokens = self.vectorize_layer([user_input])[0].numpy()
+        else:
+            random_word = self.index_to_word[np.random.choice(len(self.vocab))]
+            start_tokens = self.vectorize_layer([random_word])[0].numpy()
+        beams = [(0, start_tokens.tolist())]
+        for _ in range(len(start_tokens), self.max_len):
+            new_beams = []
+            for prob, token_seq in beams:
+                input_padded = self._prepare_input(token_seq)
+                prediction = self.model.predict(input_padded, verbose=0)[0]
+                last_step_prediction = prediction[0, len(token_seq)-1, :]
+                top_probs, top_indices = tf.math.top_k(tf.nn.softmax(last_step_prediction), k=beam_size)
+                for i in range(beam_size):
+                    next_token_prob = top_probs[i].numpy()
+                    next_token_index = top_indices[i].numpy()
+                    new_prob = prob + np.log(next_token_prob)
+                    new_token_seq = token_seq + [next_token_index]
+                    new_beams.append((new_prob, new_token_seq))
+            beams = sorted(new_beams, key=lambda x: x[0], reverse=True)[:beam_size]
+        best_beam = max(beams, key=lambda x: x[0])
+        generated_sequence = best_beam[1]
+        generated_text = " ".join([self.index_to_word.get(token, '?') for token in generated_sequence])
+        return generated_text.strip()
+
+    def generate_text(self, user_input=None, method='random'):
+        if method == 'random' or method == 'greedy':
+            sampling_func = self.sample_token
+            return self._generate_text_base(user_input, sampling_func)
+        elif method == 'beam':
+            return self.beam_search(user_input, beam_size=3)
+        else:
+            raise ValueError("Invalid generation method specified.")
