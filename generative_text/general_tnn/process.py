@@ -1,5 +1,5 @@
 
-from generative_text.general_tnn_generative.utils.fnProcessing import read_config, pad_punctuation, normalize_text, remove_whitespace, string_to_bool
+from generative_text.general_tnn.utils.fnProcessing import read_config, pad_punctuation, normalize_text, remove_whitespace, string_to_bool
 
 config_path='./generative_text/configkeras.ini'
 config_params = read_config(section='params',config_path=config_path)
@@ -39,9 +39,12 @@ def get_datasets(text_data):
     assert n_val_samples > 0, "Validation set has no samples."
     assert n_test_samples > 0, "Test set has no samples."
     text_data = text_data.shuffle(buffer_size=n_samples)
-    train_text_ds = text_data.take(n_train_samples).batch(batch_size)
-    val_text_ds = text_data.skip(n_train_samples).take(n_val_samples).batch(batch_size)
-    test_text_ds = text_data.skip(n_train_samples + n_val_samples).take(n_test_samples).batch(batch_size)
+    train_text_ds = text_data.take(n_train_samples)
+    val_text_ds = text_data.skip(n_train_samples).take(n_val_samples)
+    test_text_ds = text_data.skip(n_train_samples + n_val_samples).take(n_test_samples)
+    train_text_ds = train_text_ds.shuffle(buffer_size=n_train_samples).batch(batch_size)
+    val_text_ds = val_text_ds.shuffle(buffer_size=n_val_samples).batch(batch_size)
+    test_text_ds = test_text_ds.shuffle(buffer_size=n_test_samples).batch(batch_size)
     return train_text_ds, val_text_ds, test_text_ds
 
 def main(data, input_col='text', clean_col='text'):
@@ -50,13 +53,24 @@ def main(data, input_col='text', clean_col='text'):
     if string_to_bool(config_config_params.get("process_data", "False")):
         data = prepare_data(data, input_col, clean_col)
     if data is not None:
-        text_data = [text.lower() for text in data[clean_col].tolist()]
+        data = data[data['text'].notnull()]
+        text_data = [text[:base_max_len] for text in data['text'].tolist()]
+        text_data = [text.lower() for text in text_data]
+        text_data = tf.data.Dataset.from_tensor_slices(text_data)
+        temp_vectorize_layer = tf.keras.layers.TextVectorization(standardize=custom_standardization)
+        temp_vectorize_layer.adapt(text_data)
+        dataset_vocab = set(temp_vectorize_layer.get_vocabulary())
+        dataset_vocab.discard("")
+        dataset_vocab.discard("[UNK]")
+        combined_vocab = ["", "[UNK]"] + list(dataset_vocab)[:vocab_size - 2]
         vectorize_layer = tf.keras.layers.TextVectorization(
             standardize=custom_standardization,
             max_tokens=vocab_size,
-            output_mode="int")
+            output_mode="int",
+            output_sequence_length=base_max_len + 1,
+        )
         train_text_ds, val_text_ds, test_text_ds = get_datasets(text_data)
-        vectorize_layer.adapt(train_text_ds)
+        vectorize_layer.set_vocabulary(combined_vocab)
 
     def prepare_lm_inputs_labels(text):
         text = tf.expand_dims(text, -1)
@@ -64,10 +78,13 @@ def main(data, input_col='text', clean_col='text'):
         x = tokenized_sentences[:, :-1]
         y = tokenized_sentences[:, 1:]
         return x, y
-        
+
     train_ds = train_text_ds.map(prepare_lm_inputs_labels)
     val_ds = val_text_ds.map(prepare_lm_inputs_labels)
     test_ds = test_text_ds.map(prepare_lm_inputs_labels)
+    train_ds = train_ds.prefetch(tf.data.AUTOTUNE)
+    val_ds = val_ds.prefetch(tf.data.AUTOTUNE)
+    test_ds = test_ds.prefetch(tf.data.AUTOTUNE)
     vocab = vectorize_layer.get_vocabulary()
     return train_ds, val_ds, test_ds, vocab, vectorize_layer
 

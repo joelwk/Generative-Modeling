@@ -6,8 +6,8 @@ import tensorflow as tf
 from tensorflow.keras.models import load_model
 from tensorflow.keras.utils import custom_object_scope
 from tensorflow.keras.preprocessing.sequence import pad_sequences
-from generative_text.general_tnn_generative.tnn import TransformerBlock, TokenAndPositionEmbedding
-from generative_text.general_tnn_generative.utils.fnProcessing import read_config
+from generative_text.general_tnn.tnn import TransformerBlock, TokenAndPositionEmbedding
+from generative_text.general_tnn.utils.fnProcessing import read_config
 
 config_params = read_config(section='params', config_path='./generative_text/configkeras.ini')
 params = {key: config_params[key] for key in config_params}

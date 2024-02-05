@@ -11,7 +11,7 @@ import string
 from unicodedata import normalize
 from bs4 import BeautifulSoup, MarkupResemblesLocatorWarning
 from multiprocessing import Pool
-from generative_text.general_tnn_generative.utils.fnProcessing import read_config, remove_whitespace, normalize_text
+from generative_text.general_tnn.utils.fnProcessing import read_config, remove_whitespace, normalize_text
 from functools import partial
 
 nlp = spacy.load("en_core_web_sm")

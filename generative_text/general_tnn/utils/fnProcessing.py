@@ -5,7 +5,6 @@ import warnings
 import string
 from urllib.parse import urlparse
 from bs4 import BeautifulSoup,MarkupResemblesLocatorWarning
-from bs4 import BeautifulSoup,MarkupResemblesLocatorWarning
 from unicodedata import normalize
 import pandas as pd
 import numpy as np
@@ -31,7 +30,7 @@ whitespace_regex = re.compile(r'\s+')
 punctuation_regex = re.compile(f"([{string.punctuation}])")
 non_alphanumeric_regex = re.compile(r'[^a-zA-Z0-9.,!?\' ]')
 punctuation_regex = re.compile(f"([{string.punctuation}])")
-contraction_mapping = pd.read_json('./generative_text/general_tnn_generative/utils/contraction_mapping.json', typ='series').to_dict()
+contraction_mapping = pd.read_json('./generative_text/general_tnn/utils/contraction_mapping.json', typ='series').to_dict()
 config = read_config(section="params", config_path=config_path)
 config_params = read_config(section="process-config", config_path=config_path)
    

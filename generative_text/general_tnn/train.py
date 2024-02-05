@@ -6,8 +6,8 @@ from tensorflow.keras import layers, models, losses, callbacks
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 import traceback
 from tensorflow.keras.models import load_model 
-from generative_text.general_tnn_generative.tnn import TransformerBlock, TokenAndPositionEmbedding, causal_attention_mask
-from generative_text.general_tnn_generative.utils.fnProcessing import read_config,pad_punctuation, normalize_text, remove_whitespace
+from generative_text.general_tnn.tnn import TransformerBlock, TokenAndPositionEmbedding, causal_attention_mask
+from generative_text.general_tnn.utils.fnProcessing import read_config,pad_punctuation, normalize_text, remove_whitespace
 
 config_params = read_config(section='params', config_path='./generative_text/configkeras.ini')
 params = {key: config_params[key] for key in config_params}
