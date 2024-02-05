@@ -31,16 +31,15 @@ def train_model(data, comment_input, comment_target):
     lr_schedule = CustomSchedule(embed_dim=embed_dim, warmup_steps=warmup_steps)
     model = build_transformer_model(vocab_size, embed_dim, num_heads, feed_forward, num_layers, dropout_rate)
     optimizer = tf.keras.optimizers.Adam(learning_rate=lr_schedule, beta_1=0.9, beta_2=0.98, epsilon=epsilon)
-    model.compile(optimizer=optimizer, loss='sparse_categorical_crossentropy', metrics=['accuracy'])
+    model.compile(optimizer=optimizer, loss='sparse_categorical_crossentropy', metrics=['val_loss'])
     input_seqs_padded = input_seqs_padded[:, :-1]
     target_seqs_padded = target_seqs_padded[:, 1:]
-    input_train, input_val, target_train, target_val = train_test_split(
-        input_seqs_padded, target_seqs_padded, test_size=validation_size, random_state=42)
+    input_train, input_val, target_train, target_val = train_test_split(input_seqs_padded, target_seqs_padded, test_size=validation_size, random_state=42)
     return model.fit(input_train, target_train,
                     validation_data=(input_val, target_val),
                     epochs=epochs,
                     callbacks=[EarlyStopping(patience=25, monitor='val_loss')],
-                    batch_size=batch_size) 
+                    batch_size=batch_size), model, vocab, tokenizer
 
 if __name__ == "__main__":
-    model = train_model(data, comment_input, comment_target)
+    history, model, vocab, tokenizer = train_model(data, comment_input, comment_target)

@@ -2,6 +2,8 @@ import tensorflow as tf
 from tensorflow.keras.layers import Layer, Dense, Dropout, LayerNormalization, Embedding, Input
 from tensorflow.keras.models import Model
 from generative_text.general_tnn.utils.fnProcessing import read_config, pad_punctuation, normalize_text, remove_whitespace
+from tensorflow.keras.layers import Layer, MultiHeadAttention, Dense, Dropout, LayerNormalization
+from tensorflow.keras.regularizers import l2
 
 config_params = read_config(section='params', config_path='./generative_text/configpaired.ini')
 params = {key: config_params[key] for key in config_params}
@@ -19,6 +21,7 @@ activation = params['activation']
 epsilon = float(params['epsilon'])
 epochs = int(params['epochs'])
 batch_size = int(params['batch_size'])
+validation_size = float(params['validation_split'])
 
 class MultiHeadAttention(Layer):
     def __init__(self, num_heads, embed_dim, **kwargs):
@@ -55,15 +58,15 @@ class MultiHeadAttention(Layer):
         return output, attention_weights
 
 class TransformerBlock(Layer):
-    def __init__(self, embed_dim, num_heads, dff, rate=0.1, **kwargs):
+    def __init__(self, embed_dim, num_heads, ff, rate=0.1, epsilon=1e-6, reg_lambda=0.01, **kwargs):
         super().__init__(**kwargs)
-        self.mha = MultiHeadAttention(num_heads, embed_dim)
+        self.mha = MultiHeadAttention(num_heads,embed_dim)
         self.ffn = tf.keras.Sequential([
-            Dense(dff, activation='relu'),
-            Dense(embed_dim)
+            Dense(ff, activation='relu', kernel_regularizer=l2(reg_lambda)), 
+            Dense(embed_dim, kernel_regularizer=l2(reg_lambda))
         ])
-        self.layernorm1 = LayerNormalization(epsilon=1e-6)
-        self.layernorm2 = LayerNormalization(epsilon=1e-6)
+        self.layernorm1 = LayerNormalization(epsilon=epsilon)
+        self.layernorm2 = LayerNormalization(epsilon=epsilon)
         self.dropout1 = Dropout(rate)
         self.dropout2 = Dropout(rate)
 
@@ -71,14 +74,14 @@ class TransformerBlock(Layer):
         attn_output, _ = self.mha(x, x, x)
         attn_output = self.dropout1(attn_output, training=training)
         out1 = self.layernorm1(x + attn_output)
-
+        
         ffn_output = self.ffn(out1)
         ffn_output = self.dropout2(ffn_output, training=training)
         out2 = self.layernorm2(out1 + ffn_output)
         return out2
 
 class CustomSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
-    def __init__(self, embed_dim, warmup_steps=5000):
+    def __init__(self, embed_dim=embed_dim, warmup_steps=warmup_steps):
         super().__init__()
         self.embed_dim = tf.cast(embed_dim, tf.float32)
         self.warmup_steps = warmup_steps
