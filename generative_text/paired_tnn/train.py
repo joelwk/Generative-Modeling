@@ -25,10 +25,10 @@ epochs = int(params['epochs'])
 batch_size = int(params['batch_size'])
 validation_size = float(params['validation_split'])
 
-def train_model(data):
-    input_seqs_padded, target_seqs_padded, vocab, tokenizer = process_paired_data(data, comment_input='text', comment_target='text')
+def train_model(data, comment_input, comment_target):
+    input_seqs_padded, target_seqs_padded, vocab, tokenizer = process_paired_data(data, comment_input=comment_input, comment_target=comment_target)
     vocab_size = len(vocab) + 1
-    lr_schedule = CustomSchedule(d_model=embed_dim, warmup_steps=warmup_steps)
+    lr_schedule = CustomSchedule(embed_dim=embed_dim, warmup_steps=warmup_steps)
     model = build_transformer_model(vocab_size, embed_dim, num_heads, feed_forward, num_layers, dropout_rate)
     optimizer = tf.keras.optimizers.Adam(learning_rate=lr_schedule, beta_1=0.9, beta_2=0.98, epsilon=epsilon)
     model.compile(optimizer=optimizer, loss='sparse_categorical_crossentropy', metrics=['accuracy'])
@@ -43,4 +43,4 @@ def train_model(data):
                     batch_size=batch_size) 
 
 if __name__ == "__main__":
-    model = train_model(data)
+    model = train_model(data, comment_input, comment_target)

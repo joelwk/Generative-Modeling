@@ -21,16 +21,16 @@ epochs = int(params['epochs'])
 batch_size = int(params['batch_size'])
 
 class MultiHeadAttention(Layer):
-    def __init__(self, num_heads, d_model, **kwargs):
+    def __init__(self, num_heads, embed_dim, **kwargs):
         super().__init__(**kwargs)
         self.num_heads = num_heads
-        self.d_model = d_model
-        assert d_model % self.num_heads == 0, "d_model must be divisible by num_heads"
-        self.depth = d_model // self.num_heads
-        self.Wq = Dense(d_model)
-        self.Wk = Dense(d_model)
-        self.Wv = Dense(d_model)
-        self.dense = Dense(d_model)
+        self.embed_dim = embed_dim
+        assert embed_dim % self.num_heads == 0, "embedded dim must be divisible by num_heads"
+        self.depth = embed_dim // self.num_heads
+        self.Wq = Dense(embed_dim)
+        self.Wk = Dense(embed_dim)
+        self.Wv = Dense(embed_dim)
+        self.dense = Dense(embed_dim)
 
     def split_heads(self, x, batch_size):
         x = tf.reshape(x, (batch_size, -1, self.num_heads, self.depth))
@@ -44,24 +44,23 @@ class MultiHeadAttention(Layer):
         q = self.split_heads(q, batch_size)
         k = self.split_heads(k, batch_size)
         v = self.split_heads(v, batch_size)
-
         matmul_qk = tf.matmul(q, k, transpose_b=True)
         dk = tf.cast(tf.shape(k)[-1], tf.float32)
         scaled_attention_logits = matmul_qk / tf.math.sqrt(dk)
         attention_weights = tf.nn.softmax(scaled_attention_logits, axis=-1)
         output = tf.matmul(attention_weights, v)
         output = tf.transpose(output, perm=[0, 2, 1, 3])
-        concat_attention = tf.reshape(output, (batch_size, -1, self.d_model))
+        concat_attention = tf.reshape(output, (batch_size, -1, self.embed_dim))
         output = self.dense(concat_attention)
         return output, attention_weights
 
 class TransformerBlock(Layer):
-    def __init__(self, d_model, num_heads, dff, rate=0.1, **kwargs):
+    def __init__(self, embed_dim, num_heads, dff, rate=0.1, **kwargs):
         super().__init__(**kwargs)
-        self.mha = MultiHeadAttention(num_heads, d_model)
+        self.mha = MultiHeadAttention(num_heads, embed_dim)
         self.ffn = tf.keras.Sequential([
             Dense(dff, activation='relu'),
-            Dense(d_model)
+            Dense(embed_dim)
         ])
         self.layernorm1 = LayerNormalization(epsilon=1e-6)
         self.layernorm2 = LayerNormalization(epsilon=1e-6)
@@ -78,32 +77,30 @@ class TransformerBlock(Layer):
         out2 = self.layernorm2(out1 + ffn_output)
         return out2
 
-# Define the CustomSchedule class outside the build_transformer_model function
 class CustomSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
-    def __init__(self, d_model, warmup_steps=50000):
+    def __init__(self, embed_dim, warmup_steps=5000):
         super().__init__()
-        self.d_model = tf.cast(d_model, tf.float32)  # Ensure d_model is a float
+        self.embed_dim = tf.cast(embed_dim, tf.float32)
         self.warmup_steps = warmup_steps
 
     def __call__(self, step):
-        step = tf.cast(step, tf.float32)  # Cast step to float32 to avoid InvalidArgumentError
+        step = tf.cast(step, tf.float32)
         arg1 = tf.math.rsqrt(step)
         arg2 = step * (self.warmup_steps ** -1.5)
-        return tf.math.rsqrt(self.d_model) * tf.math.minimum(arg1, arg2)
+        return tf.math.rsqrt(self.embed_dim) * tf.math.minimum(arg1, arg2)
 
     def get_config(self):
         return {
-            "d_model": self.d_model.numpy(),  # Convert to numpy for serialization
+            "embed_dim": self.embed_dim.numpy(),
             "warmup_steps": self.warmup_steps,
         }
 
-def build_transformer_model(vocab_size, embed_dim, num_heads, dff, num_layers, rate=0.1):
+def build_transformer_model(vocab_size, embed_dim, num_heads, ff, num_layers, rate=0.1):
     inputs = Input(shape=(None,))
     embedding_layer = Embedding(input_dim=vocab_size, output_dim=embed_dim)(inputs)
     x = embedding_layer
     for _ in range(num_layers):
-        x = TransformerBlock(embed_dim, num_heads, dff, rate)(x)
-
+        x = TransformerBlock(embed_dim, num_heads, ff, rate)(x)
     outputs = Dense(vocab_size, activation='softmax')(x)
     model = Model(inputs=inputs, outputs=outputs)
     return model

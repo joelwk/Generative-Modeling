@@ -12,7 +12,7 @@ config_params = read_config(section='params',config_path=config_path)
 config_config_params = read_config(section='process-config',config_path=config_path)
 params = {key: config_params[key] for key in config_params}
 
-def process_paired_data(data, comment_input='comment_input',comment_target='comment_target'):
+def process_paired_data(data, comment_input='text',comment_target='text'):
     data[comment_input] = data[comment_input].fillna("[MISSING]").astype(str)
     data[comment_target] = data[comment_target].fillna("[MISSING]").astype(str)
     # Combine all comments and responses to build the vocabulary
