@@ -2,10 +2,13 @@ from clearml import Task, Dataset as ClearMLDataset, Model as ClearMLModel, Logg
 from tensorflow.keras.models import load_model as tf_load_model
 from generative_text.general_tnn.utils.fnProcessing import read_config
 from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping
-from generative_text.general_tnn.train import train_model, CustomSchedule
+from generative_text.general_tnn.train import train_model, CustomSchedule, TrainTextGenerator
 from generative_text.general_tnn.process import main
 from generative_text.general_tnn.tnn import TransformerBlock, TokenAndPositionEmbedding
-from generative_text.general_tnn.evaluate import TextGenerator, CustomSchedule
+from generative_text.general_tnn.evaluate import TextGenerator
+
+from generative_text.paired_tnn.process import process_paired_data
+from generative_text.paired_tnn.train import prepare_model_training, PairedTNNTextGenerator
 from datetime import datetime
 import os
 import pandas as pd
@@ -119,10 +122,17 @@ class ClearMLOpsTraining(ClearMLOps):
         self.config_params = config_params
         self.combined_params = {**self.config_params, **self.clearml_params}
 
-    def get_callbacks(self, task_output_uri):
+    def get_callbacks_general(self, task_output_uri, combined_vocab, tokenizer,):
         return [
-            ModelCheckpoint(filepath=os.path.join(task_output_uri, 'best_model.keras'), monitor='val_loss', save_best_only=True, verbose=1),
-            EarlyStopping(monitor='val_loss', patience=15, restore_best_weights=True)]
+            ModelCheckpoint(filepath=os.path.join(task_output_uri, 'best_model.keras'), monitor='val_loss', mode='min', save_best_only=True, verbose=1),
+            TrainTextGenerator(tokenizer=tokenizer),
+            EarlyStopping(monitor='loss', patience=15, restore_best_weights=True)]
+
+    def get_callbacks_paired(self, task_output_uri, tokenizer,):
+        return [
+            ModelCheckpoint(filepath=os.path.join(task_output_uri, 'best_model.keras'), monitor='val_loss', mode='min', save_best_only=True, verbose=1),
+            PairedTNNTextGenerator(tokenizer=tokenizer),
+            EarlyStopping(monitor='loss', patience=15, restore_best_weights=True)]
 
     def train_and_evaluate(self, model, train_ds, val_ds, test_ds, callbacks, task):
         logger = task.get_logger()
@@ -131,6 +141,7 @@ class ClearMLOpsTraining(ClearMLOps):
             epochs=int(self.combined_params['epochs']),
             validation_data=val_ds,
             callbacks=callbacks)
+
         for epoch in range(len(history.epoch)):
             for metric, values in history.history.items():
                 value = values[epoch]
@@ -143,27 +154,43 @@ class ClearMLOpsTraining(ClearMLOps):
                 logger.report_scalar(title=metric_name, series="test", value=value, iteration=epoch)
         logger.flush()
 
-    def run_clearml_training_task(self, task_name, dataset_id=None, load_model='new', model_id=None):
+    def run_clearml_training_task(self, task_name, dataset_type='general', dataset_id=None, load_model='new', model_id=None):
         task = Task.init(project_name=self.combined_params['clearml_project_name'], task_name=task_name, auto_connect_frameworks={'tensorboard': True}, task_type=Task.TaskTypes.training)
         task.connect(self.combined_params)
         if task:
-            if dataset_id:
-                combined_dataset = self.load_dataset(dataset_id)
-                train_ds, val_ds, test_ds, combined_vocab, tokenizer = main(combined_dataset, input_col='text', clean_col='text')
-            else:
-                train_ds, val_ds, test_ds = self.get_latest_datasets(self.combined_params['clearml_project_name'])['id']
-            custom_objects = {
-                'TokenAndPositionEmbedding': TokenAndPositionEmbedding,
-                'TransformerBlock': TransformerBlock,
-                'CustomSchedule': CustomSchedule}
-            output_model = OutputModel(task=task, framework='Keras')
-            if load_model == 'train':
-                input_model = InputModel(model_id=model_id)
-                local_model_path = input_model.get_local_copy(force_download=False)
-                model = train_model(preload_model=True, model_path=local_model_path)
-            elif load_model == 'new':
-                model = train_model(preload_model=False)
-            callbacks = self.get_callbacks(self.combined_params['clearml_output_uri'])
+            combined_dataset = self.load_dataset(dataset_id)
+            if dataset_type == 'general':
+                ## General data
+                if dataset_id:
+                    train_ds, val_ds, test_ds, combined_vocab, tokenizer = main(combined_dataset, input_col='text', clean_col='text')
+                else:
+                    train_ds, val_ds, test_ds = self.get_latest_datasets(self.combined_params['clearml_project_name'])['id']
+                custom_objects = {
+                    'TokenAndPositionEmbedding': TokenAndPositionEmbedding,
+                    'TransformerBlock': TransformerBlock,
+                    'CustomSchedule': CustomSchedule}
+                output_model = OutputModel(task=task, framework='Keras')
+                if load_model == 'train':
+                    input_model = InputModel(model_id=model_id)
+                    local_model_path = input_model.get_local_copy(force_download=False)
+                    model = train_model(preload_model=True, model_path=local_model_path)
+                elif load_model == 'new':
+                    model = train_model(preload_model=False)
+                callbacks = self.get_callbacks_general(self.combined_params['clearml_output_uri'], combined_vocab, tokenizer)
+                
+            if dataset_type == 'paired':
+                ## Paired data
+                custom_objects = {
+                    'TransformerBlock': TransformerBlock,
+                    'CustomSchedule': CustomSchedule}
+                output_model = OutputModel(task=task, framework='Keras')
+                if load_model == 'train':
+                    input_model = InputModel(model_id=model_id)
+                    local_model_path = input_model.get_local_copy(force_download=False)
+                    model, train_ds, val_ds, test_ds, vocab, tokenizer = prepare_model_training(combined_dataset, preload_model=True, model_path=local_model_path)
+                elif load_model == 'new':
+                    model, train_ds, val_ds, test_ds, vocab, tokenizer = prepare_model_training(combined_dataset, preload_model=False)
+                callbacks = self.get_callbacks_paired(self.combined_params['clearml_output_uri'], tokenizer)
             self.train_and_evaluate(model, train_ds, val_ds, test_ds, callbacks, task)
             model_filename = os.path.join(self.combined_params['clearml_output_uri'], f"{self.combined_params['model_name']}_{task.id}.keras")
             model.save(model_filename)
