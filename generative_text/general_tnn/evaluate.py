@@ -9,7 +9,7 @@ from tensorflow.keras.preprocessing.sequence import pad_sequences
 from generative_text.general_tnn.tnn import TransformerBlock, TokenAndPositionEmbedding
 from generative_text.general_tnn.utils.fnProcessing import read_config
 
-config_params = read_config(section='params', config_path='./generative_text/configkeras.ini')
+config_params = read_config(section='params-general', config_path='./generative_text/config.ini')
 params = {key: config_params[key] for key in config_params}
 
 max_len = int(params['max_len'])

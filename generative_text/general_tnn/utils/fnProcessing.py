@@ -12,8 +12,6 @@ from profanity import profanity
 
 warnings.filterwarnings("ignore", category=MarkupResemblesLocatorWarning)
 warnings.filterwarnings("ignore", category=UserWarning, module='bs4')
-config_path='./generative_text/configkeras.ini'
-
 def read_config(section="params", config_path='./../'):
     if not os.path.exists(config_path):
         print(f"Configuration file {config_path} not found.")
@@ -31,7 +29,8 @@ punctuation_regex = re.compile(f"([{string.punctuation}])")
 non_alphanumeric_regex = re.compile(r'[^a-zA-Z0-9.,!?\' ]')
 punctuation_regex = re.compile(f"([{string.punctuation}])")
 contraction_mapping = pd.read_json('./generative_text/general_tnn/utils/contraction_mapping.json', typ='series').to_dict()
-config = read_config(section="params", config_path=config_path)
+config_path='./generative_text/config.ini'
+config = read_config(section="params-general", config_path=config_path)
 config_params = read_config(section="process-config", config_path=config_path)
    
 wiki_markup_regex = re.compile(

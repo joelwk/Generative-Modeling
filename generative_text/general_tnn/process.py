@@ -1,8 +1,8 @@
 
 from generative_text.general_tnn.utils.fnProcessing import read_config, pad_punctuation, normalize_text, remove_whitespace, string_to_bool
 
-config_path='./generative_text/configkeras.ini'
-config_params = read_config(section='params',config_path=config_path)
+config_path='./generative_text/config.ini'
+config_params = read_config(section='params-general',config_path=config_path)
 config_config_params = read_config(section='process-config',config_path=config_path)
 params = {key: config_params[key] for key in config_params}
 

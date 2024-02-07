@@ -14,8 +14,9 @@ import os
 import pandas as pd
 
 class ClearMLOps:
-    def __init__(self, config_path='./generative_text/configkeras.ini'):
-        self.config_params = read_config(section='params', config_path=config_path)
+    def __init__(self, config_path='./generative_text/config.ini'):
+        # Swap between params-general or params-paired
+        self.config_params = read_config(section='params-paired', config_path=config_path)
         self.clearml_params = read_config(section='clearml', config_path=config_path)
         self.set_creds_connect()
 
@@ -116,7 +117,7 @@ class ClearMLOps:
         print(f"Weights downloaded to: {local_weights_path}")
 
 class ClearMLOpsTraining(ClearMLOps):
-    def __init__(self, clearml_params, config_params, config_path='./generative_text/configkeras.ini'):
+    def __init__(self, clearml_params, config_params, config_path='./generative_text/config.ini'):
         super().__init__(config_path)
         self.clearml_params = clearml_params
         self.config_params = config_params
@@ -149,6 +150,10 @@ class ClearMLOpsTraining(ClearMLOps):
                 metric_name = metric.replace('val_', '')
                 logger.report_scalar(title=metric_name, series=stage, value=value, iteration=epoch)
         test_metrics = model.evaluate(test_ds)
+        if isinstance(test_metrics, float):
+            test_metrics = [test_metrics]
+        for metric_name, value in zip(model.metrics_names, test_metrics):
+            print(f"{metric_name}: {value}")
         for epoch in range(len(history.epoch)):
             for metric_name, value in zip(model.metrics_names, test_metrics):
                 logger.report_scalar(title=metric_name, series="test", value=value, iteration=epoch)
@@ -177,6 +182,7 @@ class ClearMLOpsTraining(ClearMLOps):
                 elif load_model == 'new':
                     model = train_model(preload_model=False)
                 callbacks = self.get_callbacks_general(self.combined_params['clearml_output_uri'], combined_vocab, tokenizer)
+                model_filename = os.path.join(self.combined_params['clearml_output_uri'], f"{self.combined_params['model_name_general']}_{task.id}.keras")
                 
             if dataset_type == 'paired':
                 ## Paired data
@@ -187,12 +193,12 @@ class ClearMLOpsTraining(ClearMLOps):
                 if load_model == 'train':
                     input_model = InputModel(model_id=model_id)
                     local_model_path = input_model.get_local_copy(force_download=False)
-                    model, train_ds, val_ds, test_ds, vocab, tokenizer = prepare_model_training(combined_dataset, preload_model=True, model_path=local_model_path)
+                    model,train_ds, val_ds, test_ds, vocab, tokenizer = prepare_model_training(combined_dataset, preload_model=True, model_path=local_model_path)
                 elif load_model == 'new':
-                    model, train_ds, val_ds, test_ds, vocab, tokenizer = prepare_model_training(combined_dataset, preload_model=False)
+                    model,train_ds, val_ds, test_ds, vocab, tokenizer = prepare_model_training(combined_dataset, preload_model=False)
                 callbacks = self.get_callbacks_paired(self.combined_params['clearml_output_uri'], tokenizer)
+                model_filename = os.path.join(self.combined_params['clearml_output_uri'], f"{self.combined_params['model_name_paired']}_{task.id}.keras")
             self.train_and_evaluate(model, train_ds, val_ds, test_ds, callbacks, task)
-            model_filename = os.path.join(self.combined_params['clearml_output_uri'], f"{self.combined_params['model_name']}_{task.id}.keras")
             model.save(model_filename)
             output_model.update_weights(weights_filename=model_filename)
             task.close()

@@ -1,4 +1,6 @@
 import tensorflow as tf
+import numpy as np
+import os
 from tensorflow.keras.layers import Layer, Dense, Dropout, LayerNormalization, Embedding, Input
 from tensorflow.keras.models import Model
 from generative_text.paired_tnn.tnn import MultiHeadAttention, TransformerBlock, CustomSchedule, build_transformer_model
@@ -6,12 +8,11 @@ from generative_text.general_tnn.utils.fnProcessing import read_config, pad_punc
 from generative_text.paired_tnn.process import process_paired_data
 from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras import losses
-from sklearn.model_selection import train_test_split
-import numpy as np
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 from tensorflow.keras import callbacks
+from tensorflow.keras.models import load_model
 
-config_params = read_config(section='params', config_path='./generative_text/configpaired.ini')
+config_params = read_config(section='params-paired', config_path='./generative_text/config.ini')
 params = {key: config_params[key] for key in config_params}
 
 max_len = int(params['max_len'])
@@ -46,6 +47,7 @@ class PairedTNNTextGenerator(callbacks.Callback):
         end_token_str = '[end]'
         formatted_seed_text = f"{start_token_str} {seed_text} {sep_token_str}"
         input_text = formatted_seed_text
+
         for _ in range(max_len):
             sequence = self.tokenizer.texts_to_sequences([input_text])[0]
             padded_sequence = pad_sequences([sequence], maxlen=self.max_len, padding='post')
@@ -60,7 +62,7 @@ class PairedTNNTextGenerator(callbacks.Callback):
 
     def on_epoch_end(self, epoch, logs=None):
         seed_text = "i am happy because"
-        generated_response = self.generate_response(seed_text, max_len=self.max_len, temperature=0.7)
+        generated_response = self.generate_response(seed_text, max_len=10, temperature=0.7)
         print(f"\nSample generated response for '{seed_text}': {generated_response}")
 
 def prepare_model_training(data, preload_model=False, model_path=None):
@@ -83,7 +85,7 @@ def prepare_model_training(data, preload_model=False, model_path=None):
                 traceback.print_exc() 
         else:
             print(f"Model path {model_path} does not exist.")
-    return model
+    return model,train_ds, val_ds, test_ds, vocab, tokenizer
 
 if __name__ == "__main__":
-    train_ds, val_ds, test_ds, vocab, tokenizer, model = prepare_model_training()
+    model,train_ds, val_ds, test_ds, vocab, tokenizer = prepare_model_training(data, preload_model=False, model_path=None)

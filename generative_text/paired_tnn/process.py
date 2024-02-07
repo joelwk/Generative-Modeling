@@ -6,9 +6,8 @@ import re
 import warnings
 
 warnings.filterwarnings("ignore", category=UserWarning, module='bs4')
-
-config_path='./generative_text/configpaired.ini'
-config_params = read_config(section='params',config_path=config_path)
+config_path='./generative_text/config.ini'
+config_params = read_config(section='params-paired',config_path=config_path)
 config_config_params = read_config(section='process-config',config_path=config_path)
 params = {key: config_params[key] for key in config_params}
 
@@ -28,6 +27,7 @@ def process_paired_data(data, comment_input='comment', comment_target='response_
     for token in ['[start]', '[sep]', '[end]']:
         if token not in tokenizer.word_index:
             tokenizer.word_index[token] = len(tokenizer.word_index) + 1
+
     input_seqs = []
     target_seqs = []
     start_token_id = tokenizer.word_index['[start]']
@@ -38,6 +38,7 @@ def process_paired_data(data, comment_input='comment', comment_target='response_
         target_seq = response_seq + [end_token_id]
         input_seqs.append(input_seq)
         target_seqs.append(target_seq)
+
     input_seqs_padded = pad_sequences(input_seqs, maxlen=int(config_params['max_len']), padding='post', truncating='post').astype('int32') 
     target_seqs_padded = pad_sequences(target_seqs, maxlen=int(config_params['max_len']), padding='post', truncating='post').astype('int32') 
     input_seqs_padded = input_seqs_padded[:, :-1]
@@ -45,8 +46,6 @@ def process_paired_data(data, comment_input='comment', comment_target='response_
     validation_split = float(config_params['validation_split'])
     test_split = validation_split / 2 
     dataset = tf.data.Dataset.from_tensor_slices((input_seqs_padded, target_seqs_padded))
-
-    # Calculate split sizes
     n_samples = len(input_seqs_padded)
     n_train_samples = int(n_samples * (1 - validation_split - test_split))
     n_val_samples = int(n_samples * validation_split)

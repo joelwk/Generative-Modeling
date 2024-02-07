@@ -5,7 +5,7 @@ from generative_text.general_tnn.utils.fnProcessing import read_config, pad_punc
 from tensorflow.keras.layers import Layer, MultiHeadAttention, Dense, Dropout, LayerNormalization
 from tensorflow.keras.regularizers import l2
 
-config_params = read_config(section='params', config_path='./generative_text/configpaired.ini')
+config_params = read_config(section='params-paired', config_path='./generative_text/config.ini')
 params = {key: config_params[key] for key in config_params}
 
 max_len = int(params['max_len'])

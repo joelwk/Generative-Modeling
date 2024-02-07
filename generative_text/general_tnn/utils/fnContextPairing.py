@@ -17,7 +17,7 @@ from functools import partial
 nlp = spacy.load("en_core_web_sm")
 
 class ContextPairing:
-    def __init__(self, data, path_to_dump_file, included_entity_labels, config_path='./generative_text/configkeras.ini'):
+    def __init__(self, data, path_to_dump_file, included_entity_labels, config_path='./generative_text/config.ini'):
         self.nlp = spacy.load("en_core_web_sm")
         self.path_to_dump_file = path_to_dump_file
         self.included_entity_labels = included_entity_labels
