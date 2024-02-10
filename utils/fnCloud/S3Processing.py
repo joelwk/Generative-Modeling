@@ -17,11 +17,11 @@ import glob
 import logging
 import pandas as pd
 import configparser
-from utils.fnAWS.S3Handler import S3Handler
+from utils.fnCloud.S3Handler import S3Handler
 from utils.fnProcessing import read_config
 from utils.fnSampling import stratified_sample_by_time
 
-config_path='./utils/fnAWS/config-AWS.ini'
+config_path='./utils/fnCloud/config-cloud.ini'
 config_params = read_config(section='aws_credentials',config_path=config_path)
 config_s3_info = read_config(section='s3_information',config_path=config_path)
 

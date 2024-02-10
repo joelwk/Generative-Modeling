@@ -8,7 +8,6 @@ import logging
 import configparser
 from botocore.exceptions import BotoCoreError, ClientError
 
-# Set up logger
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -16,10 +15,9 @@ handler = logging.StreamHandler()
 handler.setFormatter(formatter)
 logger.addHandler(handler)
 
-# Read configuration
 from utils.fnProcessing import read_config
 
-config_path='./utils/fnAWS/config-AWS.ini'
+config_path='./utils/fnCloud/config-cloud.ini'
 config_params = read_config(section='aws_credentials',config_path=config_path)
 config_s3_info = read_config(section='s3_information',config_path=config_path)
 
