@@ -17,16 +17,48 @@ handler.setFormatter(formatter)
 logger.addHandler(handler)
 
 # Read configuration
-config = configparser.ConfigParser()
-config.read('../.config.ini')
-# Set up logging
+from generative_text.general_tnn.utils.fnProcessing import read_config
+
+config_path='./generative_text/general_tnn/utils/fnAWS/config-AWS.ini'
+config_params = read_config(section='aws_credentials',config_path=config_path)
+config_s3_info = read_config(section='s3_information',config_path=config_path)
+
 logger = logging.getLogger(__name__)
-session = boto3.Session()
+
+bucket_name = config_s3_info['s3_bucket'], 
+s3_bucket_data = config_s3_info['s3_bucket_data']
+aws_access_key_id = config_params['aws_access_key_id']
+aws_secret_access_key = config_params['aws_secret_access_key']
+
 class S3Handler:
-    def __init__(self, bucket_name, local_path):
-        self.bucket_name = bucket_name
-        self.local_path = os.path.normpath(local_path) + os.sep
-        self.s3 = boto3.client('s3')
+    def __init__(self, aws_credentials, s3_info, local_data_path='../data-s3', region_name='us-east-1'):
+        # Correctly assign bucket_name from s3_info dictionary
+        self.bucket_name = s3_info['s3_bucket']
+        self.local_path = os.path.normpath(local_data_path) + os.sep
+        self.region_name = region_name
+        
+        # Setup session and s3 client
+        if aws_credentials.get('profile_name'):
+            session = boto3.Session(profile_name=aws_credentials['profile_name'])
+        else:
+            session = boto3.Session(aws_access_key_id=aws_credentials['aws_access_key_id'],
+                                    aws_secret_access_key=aws_credentials['aws_secret_access_key'],
+                                    region_name=self.region_name)
+        self.s3 = session.client('s3')
+        
+        # Logging setup
+        self.logger = logging.getLogger(__name__)
+        self._setup_logging()
+
+    def _setup_logging(self):
+        handler = logging.StreamHandler()
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        handler.setFormatter(formatter)
+        self.logger.addHandler(handler)
+        self.logger.setLevel(logging.INFO)
+        
+    def get_s3_client(self):
+        return self.s3
 
     def file_exists_in_s3(self, s3_key):
         try:
@@ -34,17 +66,17 @@ class S3Handler:
             return True
         except self.s3.exceptions.ClientError:
             return False
-
-    def _upload_file(self, local_file, s3_key):
-        print(f"Uploading {local_file} to {s3_key}...")
-        self.s3.upload_file(local_file, self.bucket_name, s3_key)
-
+            
     def upload_dir(self, dir_key):
         for root, _, files in os.walk(self.local_path):
+            print(root)
             for file in files:
                 local_file = os.path.join(root, file)
                 relative_path = os.path.relpath(local_file, self.local_path)
                 s3_key = os.path.join(dir_key, relative_path).replace(os.sep, '/')
+                print(f"Bucket name: {self.bucket_name}, Type: {type(self.bucket_name)}")
+
+                print(s3_key)
                 if not local_file.endswith('/') and not local_file.endswith('\\'):
                     if not self.file_exists_in_s3(s3_key):
                         self._upload_file(local_file, s3_key)
