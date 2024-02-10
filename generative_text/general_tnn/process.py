@@ -1,5 +1,5 @@
 
-from generative_text.general_tnn.utils.fnProcessing import read_config, pad_punctuation, normalize_text, remove_whitespace, string_to_bool
+from utils.fnProcessing import read_config, pad_punctuation, normalize_text, remove_whitespace, string_to_bool
 
 config_path='./generative_text/config.ini'
 config_params = read_config(section='params-general',config_path=config_path)

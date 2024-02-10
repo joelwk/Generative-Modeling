@@ -1,4 +1,4 @@
-from generative_text.general_tnn.utils.fnProcessing import read_config, pad_punctuation, normalize_text, remove_whitespace, string_to_bool
+from utils.fnProcessing import read_config, pad_punctuation, normalize_text, remove_whitespace, string_to_bool
 from tensorflow.keras.preprocessing.text import Tokenizer
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 import tensorflow as tf

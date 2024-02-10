@@ -1,7 +1,7 @@
 import tensorflow as tf
 from tensorflow.keras.layers import Layer, Dense, Dropout, LayerNormalization, Embedding, Input
 from tensorflow.keras.models import Model
-from generative_text.general_tnn.utils.fnProcessing import read_config, pad_punctuation, normalize_text, remove_whitespace
+from utils.fnProcessing import read_config, pad_punctuation, normalize_text, remove_whitespace
 from tensorflow.keras.layers import Layer, MultiHeadAttention, Dense, Dropout, LayerNormalization
 from tensorflow.keras.regularizers import l2
 

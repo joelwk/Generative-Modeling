@@ -1,6 +1,6 @@
 from clearml import Task, Dataset as ClearMLDataset, Model as ClearMLModel, Logger, OutputModel, InputModel
 from tensorflow.keras.models import load_model as tf_load_model
-from generative_text.general_tnn.utils.fnProcessing import read_config
+from utils.fnProcessing import read_config
 from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping
 from generative_text.general_tnn.train import train_model, CustomSchedule, TrainTextGenerator
 from generative_text.general_tnn.process import main

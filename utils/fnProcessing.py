@@ -28,7 +28,7 @@ whitespace_regex = re.compile(r'\s+')
 punctuation_regex = re.compile(f"([{string.punctuation}])")
 non_alphanumeric_regex = re.compile(r'[^a-zA-Z0-9.,!?\' ]')
 punctuation_regex = re.compile(f"([{string.punctuation}])")
-contraction_mapping = pd.read_json('./generative_text/general_tnn/utils/contraction_mapping.json', typ='series').to_dict()
+contraction_mapping = pd.read_json('./utils/contraction_mapping.json', typ='series').to_dict()
 config_path='./generative_text/config.ini'
 config = read_config(section="params-general", config_path=config_path)
 config_params = read_config(section="process-config", config_path=config_path)
@@ -71,7 +71,6 @@ def normalize_text(text):
                 text = ' '.join(contraction_mapping.get(t, t) for t in text.split())
             if string_to_bool(config_params.get("non_alpha_numeric", "False")):
                 text = non_alphanumeric_regex.sub(' ', text)
-
             return whitespace_regex.sub(' ', text).strip()
         except ValueError:
             return text
@@ -91,6 +90,7 @@ def find_dialogs(data):
     pattern = re.compile(r'&gt;&gt;\d+')
     to_from = []
     for index, row in data.iterrows():
+        pass
         thread_id = int(row['thread_id'])
         posted_comment = row['posted_comment']
         references = pattern.findall(posted_comment)
@@ -98,7 +98,7 @@ def find_dialogs(data):
             ref_id = int(reference.replace('&gt;&gt;', ''))
             if ref_id != thread_id:
                 to_from.append((ref_id, thread_id))
-    dialog_df = pd.DataFrame(to_from, columns=['from', 'to'], dtype='int64')
+    dialog_df = pd.DataFrame(to_from, columns=['from', 'to']).astype('object')
     return dialog_df
     
 def augment_dialogs(replies, original_data):

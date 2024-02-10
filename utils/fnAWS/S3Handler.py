@@ -17,9 +17,9 @@ handler.setFormatter(formatter)
 logger.addHandler(handler)
 
 # Read configuration
-from generative_text.general_tnn.utils.fnProcessing import read_config
+from utils.fnProcessing import read_config
 
-config_path='./generative_text/general_tnn/utils/fnAWS/config-AWS.ini'
+config_path='./utils/fnAWS/config-AWS.ini'
 config_params = read_config(section='aws_credentials',config_path=config_path)
 config_s3_info = read_config(section='s3_information',config_path=config_path)
 

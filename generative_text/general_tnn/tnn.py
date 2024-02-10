@@ -5,7 +5,7 @@ import tensorflow as tf
 from tensorflow.keras import layers, models, losses, callbacks
 import traceback
 from tensorflow.keras.models import load_model 
-from generative_text.general_tnn.utils.fnProcessing import read_config,pad_punctuation, normalize_text, remove_whitespace
+from utils.fnProcessing import read_config,pad_punctuation, normalize_text, remove_whitespace
 
 config_params = read_config(section='params-general', config_path='./generative_text/config.ini')
 params = {key: config_params[key] for key in config_params}

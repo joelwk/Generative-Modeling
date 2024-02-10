@@ -4,7 +4,7 @@ import os
 from tensorflow.keras.layers import Layer, Dense, Dropout, LayerNormalization, Embedding, Input
 from tensorflow.keras.models import Model
 from generative_text.paired_tnn.tnn import MultiHeadAttention, TransformerBlock, CustomSchedule, build_transformer_model
-from generative_text.general_tnn.utils.fnProcessing import read_config, pad_punctuation, normalize_text, remove_whitespace
+from utils.fnProcessing import read_config, pad_punctuation, normalize_text, remove_whitespace
 from generative_text.paired_tnn.process import process_paired_data
 from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras import losses

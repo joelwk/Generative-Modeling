@@ -17,38 +17,37 @@ import glob
 import logging
 import pandas as pd
 import configparser
-from generative_text.general_tnn.utils.fnAWS.S3Handler import S3Handler
-from generative_text.general_tnn.utils.fnProcessing import read_config
+from utils.fnAWS.S3Handler import S3Handler
+from utils.fnProcessing import read_config
+from utils.fnSampling import stratified_sample_by_time
 
-config_path='./generative_text/general_tnn/utils/fnAWS/config-AWS.ini'
+config_path='./utils/fnAWS/config-AWS.ini'
 config_params = read_config(section='aws_credentials',config_path=config_path)
 config_s3_info = read_config(section='s3_information',config_path=config_path)
 
 logger = logging.getLogger(__name__)
 
-connector = S3Handler(config_params, config_s3_info)
-
-def get_random_batch_data_from_s3(bucket, s3_prefix, sample_ratio=None, file_ratio=None):
+def get_random_batch_data_from_s3(bucket, s3_prefix, sample_ratio=None, file_ratio=None, stratify=True):
     connector = S3Handler(config_params, config_s3_info)
     s3_client = connector.get_s3_client()
     response = s3_client.list_objects_v2(Bucket=bucket, Prefix=s3_prefix)
-    batch_objects = [item['Key'] for item in response if item['Key'].startswith(s3_prefix + 'batch_')]
+    batch_objects = [item['Key'] for item in response['Contents'] if item['Key'].startswith(s3_prefix + 'batch_')]
     if not batch_objects:
         print("No 'batch_' files found.")
         return None
     if file_ratio is not None:
         batch_objects = random.sample(batch_objects, int(len(batch_objects) * file_ratio))
     all_data = []
-    # Go through all batch_objects
     for key in batch_objects:
-        obj = s3.get_object(Bucket=bucket, Key=key)
+        obj = s3_client.get_object(Bucket=bucket, Key=key)
         gz_data = obj['Body'].read()
-        # Decompress the gzip stream and load the pickled DataFrame
         with gzip.GzipFile(fileobj=io.BytesIO(gz_data)) as gzipfile:
             data = pickle.load(gzipfile)
-        # Sample the data if sample_ratio is provided
         if sample_ratio is not None:
-            data = data.sample(frac=sample_ratio)
+            if stratify:
+                data = stratified_sample_by_time(data, 'posted_date_time', 'H', sample_ratio)
+            else:
+                data = data.sample(frac=sample_ratio)
         all_data.append(data)
     sampled_df = pd.concat(all_data, ignore_index=True)
     return sampled_df
@@ -62,7 +61,7 @@ def load_processed_data(file_path):
     with gzip.GzipFile(fileobj=buffer, mode='r') as f:
         return pickle.load(f)
 
-def get_random_sample_csv_from_s3(bucket, s3_prefix, sample_ratio=None):
+def get_random_sample_csv_from_s3(bucket, s3_prefix, sample_ratio=None, stratify=True):
     connector = S3Handler(config_params, config_s3_info)
     s3_client = connector.get_s3_client()
     response = s3_client.list_objects_v2(Bucket=bucket, Prefix=s3_prefix)
@@ -75,11 +74,14 @@ def get_random_sample_csv_from_s3(bucket, s3_prefix, sample_ratio=None):
     s3_client.download_file(bucket, random_file_key, temp_file)
     data = pd.read_csv(temp_file)
     if sample_ratio is not None:
-        data = data.sample(frac=sample_ratio)
+        if stratify:
+            data = stratified_sample_by_time(data, 'posted_date_time', 'H', sample_ratio)
+        else:
+            data = data.sample(frac=sample_ratio)
     os.remove(temp_file)
     return data
 
-def get_random_sample_parquet_from_local(dir_pattern, sample_ratio=None):
+def get_random_sample_parquet_local(dir_pattern, sample_ratio=None, stratify=False):
     parquet_files = glob.glob(dir_pattern)
     if not parquet_files:
         print("No parquet files found.")
@@ -90,16 +92,14 @@ def get_random_sample_parquet_from_local(dir_pattern, sample_ratio=None):
         data = data.sample(frac=sample_ratio)
     return data
 
-def load_processed_sample_s3(bucket, s3_prefix, file_ratio=None, sample_ratio=None):
+def load_processed_parquet_s3(bucket, s3_prefix, file_ratio=None, sample_ratio=None, stratify=False):
     connector = S3Handler(config_params, config_s3_info)
     s3_client = connector.get_s3_client()
     response = s3_client.list_objects_v2(Bucket=bucket, Prefix=s3_prefix)
-    # Response is a list of strings (keys), not dictionaries
     parquet_objects = [key for key in response if key.endswith('.parquet')]
     if not parquet_objects:
         print("No parquet files found.")
         return None
-    # Sample a fraction of the files
     if file_ratio is not None:
         parquet_objects = random.sample(parquet_objects, int(len(parquet_objects) * file_ratio))
     dfs = []
@@ -108,9 +108,11 @@ def load_processed_sample_s3(bucket, s3_prefix, file_ratio=None, sample_ratio=No
         connector._download_file(bucket, file_key, temp_file)
         df = pd.read_parquet(temp_file)
         if sample_ratio is not None:
-            df = df.sample(frac=sample_ratio)
+            if stratify and 'posted_date_time' in df.columns:
+                df = stratified_sample_by_time(df, 'posted_date_time', 'H', sample_ratio)
+            else:
+                df = df.sample(frac=sample_ratio)
         dfs.append(df)
-        # Remove the temporary file
         os.remove(temp_file)
     data = pd.concat(dfs)
     return data
