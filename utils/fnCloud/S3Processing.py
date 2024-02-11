@@ -52,11 +52,11 @@ def get_random_batch_data_from_s3(bucket, s3_prefix, sample_ratio=None, file_rat
     sampled_df = pd.concat(all_data, ignore_index=True)
     return sampled_df
 
-def load_processed_data(file_path):
+def load_processed_data(data,s3_prefix):
     connector = S3Handler(config_params, config_s3_info)
     s3_client = connector.get_s3_client()
     buffer = io.BytesIO()
-    s3_client.download_fileobj(config_s3_info['bucket_name'], file_path, buffer)
+    s3_client.download_fileobj(config_s3_info['s3_bucket'], s3_prefix, buffer)
     buffer.seek(0)
     with gzip.GzipFile(fileobj=buffer, mode='r') as f:
         return pickle.load(f)
@@ -74,8 +74,13 @@ def get_random_sample_csv_from_s3(bucket, s3_prefix, sample_ratio=None, stratify
     s3_client.download_file(bucket, random_file_key, temp_file)
     data = pd.read_csv(temp_file)
     if sample_ratio is not None:
-        if stratify:
-            data = stratified_sample_by_time(data, 'posted_date_time', 'H', sample_ratio)
+        stratify_column = None
+        if 'posted_date_time' in data.columns:
+            stratify_column = 'posted_date_time'
+        elif 'comment_posted_date_time' in data.columns:
+            stratify_column = 'comment_posted_date_time'
+        if stratify and stratify_column:
+            data = stratified_sample_by_time(data, stratify_column, 'H', sample_ratio)
         else:
             data = data.sample(frac=sample_ratio)
     os.remove(temp_file)

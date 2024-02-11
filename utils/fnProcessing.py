@@ -12,6 +12,7 @@ from profanity import profanity
 
 warnings.filterwarnings("ignore", category=MarkupResemblesLocatorWarning)
 warnings.filterwarnings("ignore", category=UserWarning, module='bs4')
+
 def read_config(section="params", config_path='./../'):
     if not os.path.exists(config_path):
         print(f"Configuration file {config_path} not found.")
@@ -66,6 +67,7 @@ def normalize_text(text):
             text = re.sub(r'thumb\|\d*x\d*px\|', '', text)
             text = re.sub(r'thumb\|', '', text)
             text = re.sub(r'\d*x\d*px\|', '', text)
+            text = re.sub(r'^\s*>+', '', text, flags=re.MULTILINE)
             # Existing normalization steps continued
             if string_to_bool(config_params.get("contraction_mapping", "False")):
                 text = ' '.join(contraction_mapping.get(t, t) for t in text.split())
@@ -115,17 +117,21 @@ def augment_dialogs(replies, original_data):
         if from_thread not in original_comments:
             original_post = original_data[original_data['thread_id'] == from_thread]
             if not original_post.empty:
-                original_comments[from_thread] = original_post.iloc[0]['text_clean']
+                # Remove ">" from the start of the original comment
+                original_comment = original_post.iloc[0]['text'].lstrip('>')
+                original_comments[from_thread] = original_comment
                 original_date_times[from_thread] = original_post.iloc[0]['posted_date_time']
                 replies.at[index, 'is_original'] = True
         replies.at[index, 'comment'] = original_comments.get(from_thread)
         replies.at[index, 'comment_posted_date_time'] = original_date_times.get(from_thread)
         response_post = original_data[original_data['thread_id'] == to_thread]
         if not response_post.empty:
-            replies.at[index, 'response_comment'] = response_post.iloc[0]['text_clean']
+            # Remove ">" from the start of the response comment
+            response_comment = response_post.iloc[0]['text'].lstrip('>')
+            replies.at[index, 'response_comment'] = response_comment
             replies.at[index, 'response_posted_date_time'] = response_post.iloc[0]['posted_date_time']
     return replies
-    
+
 def view_shapes(data):
     for inputs, targets in data.take(1):
         print("Inputs:", inputs)
