@@ -15,12 +15,11 @@ import pandas as pd
 
 config_path='./utils/fnCloud/config-cloud.ini'
 config_params = read_config(section='aws_credentials',config_path=config_path)
-
 aws_access_key_id = config_params['aws_access_key_id']
 aws_secret_access_key = config_params['aws_secret_access_key']
 
-os.environ['AWS_ACCESS_KEY_ID'] = config_params['aws_access_key_id']
-os.environ['AWS_SECRET_ACCESS_KEY'] = config_params['aws_secret_access_key']
+os.environ['AWS_ACCESS_KEY_ID'] = aws_access_key_id
+os.environ['AWS_SECRET_ACCESS_KEY'] = aws_secret_access_key
 os.environ['AWS_DEFAULT_REGION'] = 'us-east-1'
 
 class ClearMLOps:
@@ -28,6 +27,7 @@ class ClearMLOps:
         # Swap between params-general or params-paired
         self.config_params = read_config(section='params-paired', config_path=config_path)
         self.clearml_params = read_config(section='clearml', config_path=config_path)
+        self.process_config = read_config(section='process-config', config_path=config_path)
         self.set_creds_connect()
 
     def set_creds_connect(self):
@@ -49,6 +49,7 @@ class ClearMLOps:
         try:
             task = Task.init(project_name=self.clearml_params['clearml_project_name'],
                             task_name=task_name,
+                            output_uri=self.clearml_params['clearml_output_uri'],
                             task_type=task_type)
             task.connect(self.config_params)
             return task
@@ -98,11 +99,10 @@ class ClearMLOps:
     def process_data(self, training_data, dataset_name, task_name):
         task = self.initialize_clearml(task_name, Task.TaskTypes.data_processing)
         if task:
-            task_output_uri = task.output_uri or self.clearml_params['clearml_output_uri']
-            os.makedirs(task_output_uri, exist_ok=True)
+            os.makedirs(self.process_config['dir_loc'], exist_ok=True)
             filename = self.generate_file_name(dataset_name, task.name, task.id)
-            self.save_dataset_to_local(training_data, task_output_uri, filename)
-            self.upload_dataset_to_clearml(os.path.join(task_output_uri, filename), f'{dataset_name}_{task.id}', task_name)
+            self.save_dataset_to_local(training_data, self.process_config['dir_loc'], filename)
+            self.upload_dataset_to_clearml(os.path.join(self.process_config['dir_loc'], filename), f'{dataset_name}_{task.id}', task_name)
             task.close()
 
     def get_training_set(self, task_name):
