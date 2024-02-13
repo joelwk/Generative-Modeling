@@ -13,6 +13,16 @@ from datetime import datetime
 import os
 import pandas as pd
 
+config_path='./utils/fnCloud/config-cloud.ini'
+config_params = read_config(section='aws_credentials',config_path=config_path)
+
+aws_access_key_id = config_params['aws_access_key_id']
+aws_secret_access_key = config_params['aws_secret_access_key']
+
+os.environ['AWS_ACCESS_KEY_ID'] = config_params['aws_access_key_id']
+os.environ['AWS_SECRET_ACCESS_KEY'] = config_params['aws_secret_access_key']
+os.environ['AWS_DEFAULT_REGION'] = 'us-east-1'
+
 class ClearMLOps:
     def __init__(self, config_path='./generative_text/config.ini'):
         # Swap between params-general or params-paired
@@ -54,9 +64,9 @@ class ClearMLOps:
         except Exception as e:
             print(f"Failed to save DataFrame to {filename}: {e}")
             
-    def upload_dataset_to_clearml(self, dataset_uri, dataset_name):
+    def upload_dataset_to_clearml(self, dataset_uri, dataset_name, task_name):
         try:
-            clearml_dataset = ClearMLDataset.create(dataset_project=self.clearml_params['clearml_project_name'], dataset_name=dataset_name)
+            clearml_dataset = ClearMLDataset.create(dataset_project=self.clearml_params['clearml_project_name'], dataset_name=dataset_name, output_uri=self.clearml_params['clearml_output_uri'], description=f"{task_name}")
             clearml_dataset.add_files(dataset_uri)
             clearml_dataset.finalize(auto_upload=True)
             print(f"Uploaded {dataset_name} to ClearML.")
@@ -92,7 +102,7 @@ class ClearMLOps:
             os.makedirs(task_output_uri, exist_ok=True)
             filename = self.generate_file_name(dataset_name, task.name, task.id)
             self.save_dataset_to_local(training_data, task_output_uri, filename)
-            self.upload_dataset_to_clearml(os.path.join(task_output_uri, filename), f'{dataset_name}_{task.id}')
+            self.upload_dataset_to_clearml(os.path.join(task_output_uri, filename), f'{dataset_name}_{task.id}', task_name)
             task.close()
 
     def get_training_set(self, task_name):
@@ -139,7 +149,7 @@ class ClearMLOpsTraining(ClearMLOps):
         self.clearml_params = clearml_params
         self.config_params = config_params
         self.combined_params = {**self.config_params, **self.clearml_params}
-
+       
     def get_callbacks_general(self, task_output_uri, combined_vocab, tokenizer,):
         return [
             ModelCheckpoint(filepath=os.path.join(task_output_uri, 'best_model.keras'), monitor='val_loss', mode='min', save_best_only=True, verbose=1),
@@ -182,7 +192,7 @@ class ClearMLOpsTraining(ClearMLOps):
         logger.flush()
 
     def run_clearml_training_task(self, task_name, dataset_type='general', dataset_id=None, load_model='new', model_id=None):
-        task = Task.init(project_name=self.combined_params['clearml_project_name'], task_name=task_name, auto_connect_frameworks={'tensorboard': True}, task_type=Task.TaskTypes.training)
+        task = Task.init(project_name=self.combined_params['clearml_project_name'], task_name=task_name, auto_connect_frameworks={'tensorboard': True}, task_output_uri=self.clearml_params['clearml_output_uri'], task_type=Task.TaskTypes.training)
         task.connect(self.combined_params)
         if task:
             combined_dataset = self.load_dataset(dataset_id)
@@ -203,8 +213,8 @@ class ClearMLOpsTraining(ClearMLOps):
                     model = train_model(preload_model=True, model_path=local_model_path)
                 elif load_model == 'new':
                     model = train_model(preload_model=False)
-                callbacks = self.get_callbacks_general(self.combined_params['clearml_output_uri'], combined_vocab, tokenizer)
-                model_filename = os.path.join(self.combined_params['clearml_output_uri'], f"{self.combined_params['model_name_general']}_{task.id}.keras")
+                callbacks = self.get_callbacks_general(task_output_uri, combined_vocab, tokenizer)
+                model_filename = os.path.join(task_output_uri, f"{self.combined_params['model_name_general']}_{task.id}.keras")
                 
             if dataset_type == 'paired':
                 ## Paired data
@@ -218,9 +228,9 @@ class ClearMLOpsTraining(ClearMLOps):
                     model,train_ds, val_ds, test_ds, vocab, tokenizer = prepare_model_training(combined_dataset, preload_model=True, model_path=local_model_path)
                 elif load_model == 'new':
                     model,train_ds, val_ds, test_ds, vocab, tokenizer = prepare_model_training(combined_dataset, preload_model=False)
-                callbacks = self.get_callbacks_paired(self.combined_params['clearml_output_uri'], tokenizer)
+                callbacks = self.get_callbacks_paired(task_output_uri, tokenizer)
                 # Could be soure of issue - look at model naming
-                model_filename = os.path.join(self.combined_params['clearml_output_uri'], f"{self.combined_params['model_name_paired']}_{task.id}.keras")
+                model_filename = os.path.join(task_output_uri, f"{self.combined_params['model_name_paired']}_{task.id}.keras")
             self.train_and_evaluate(model, train_ds, val_ds, test_ds, callbacks, task)
             model.save(model_filename)
             output_model.update_weights(weights_filename=model_filename)
