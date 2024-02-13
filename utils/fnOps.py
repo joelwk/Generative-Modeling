@@ -25,9 +25,8 @@ os.environ['AWS_DEFAULT_REGION'] = 'us-east-1'
 class ClearMLOps:
     def __init__(self, config_path='./generative_text/config.ini'):
         # Swap between params-general or params-paired
-        self.config_params = read_config(section='params-paired', config_path=config_path)
+        self.config_params = read_config(section='params-general', config_path=config_path)
         self.clearml_params = read_config(section='clearml', config_path=config_path)
-        self.process_config = read_config(section='process-config', config_path=config_path)
         self.set_creds_connect()
 
     def set_creds_connect(self):
@@ -153,7 +152,7 @@ class ClearMLOpsTraining(ClearMLOps):
     def get_callbacks_general(self, task_output_uri, combined_vocab, tokenizer,):
         return [
             ModelCheckpoint(filepath=os.path.join(task_output_uri, 'best_model.keras'), monitor='val_loss', mode='min', save_best_only=True, verbose=1),
-            TrainTextGenerator(tokenizer=tokenizer),
+            TrainTextGenerator(index_to_word=combined_vocab, tokenizer=tokenizer),
             EarlyStopping(monitor='loss', patience=15, restore_best_weights=True)]
 
     def get_callbacks_paired(self, task_output_uri, tokenizer,):
@@ -192,7 +191,8 @@ class ClearMLOpsTraining(ClearMLOps):
         logger.flush()
 
     def run_clearml_training_task(self, task_name, dataset_type='general', dataset_id=None, load_model='new', model_id=None):
-        task = Task.init(project_name=self.combined_params['clearml_project_name'], task_name=task_name, auto_connect_frameworks={'tensorboard': True}, task_output_uri=self.clearml_params['clearml_output_uri'], task_type=Task.TaskTypes.training)
+        output_uri = self.clearml_params['clearml_output_uri']
+        task = Task.init(project_name=self.combined_params['clearml_project_name'], task_name=task_name, auto_connect_frameworks={'tensorboard': True}, output_uri=output_uri, task_type=Task.TaskTypes.training)
         task.connect(self.combined_params)
         if task:
             combined_dataset = self.load_dataset(dataset_id)
@@ -213,9 +213,9 @@ class ClearMLOpsTraining(ClearMLOps):
                     model = train_model(preload_model=True, model_path=local_model_path)
                 elif load_model == 'new':
                     model = train_model(preload_model=False)
-                callbacks = self.get_callbacks_general(task_output_uri, combined_vocab, tokenizer)
-                model_filename = os.path.join(task_output_uri, f"{self.combined_params['model_name_general']}_{task.id}.keras")
-                
+                callbacks = self.get_callbacks_general(output_uri, combined_vocab, tokenizer)
+                model_filename = os.path.join(output_uri, f"{self.combined_params['model_name_general']}_{task.id}.keras")
+                                
             if dataset_type == 'paired':
                 ## Paired data
                 custom_objects = {
@@ -228,9 +228,9 @@ class ClearMLOpsTraining(ClearMLOps):
                     model,train_ds, val_ds, test_ds, vocab, tokenizer = prepare_model_training(combined_dataset, preload_model=True, model_path=local_model_path)
                 elif load_model == 'new':
                     model,train_ds, val_ds, test_ds, vocab, tokenizer = prepare_model_training(combined_dataset, preload_model=False)
-                callbacks = self.get_callbacks_paired(task_output_uri, tokenizer)
+                callbacks = self.get_callbacks_paired(output_uri, tokenizer)
+                model_filename = os.path.join(output_uri, f"{self.combined_params['model_name_paired']}_{task.id}.keras")
                 # Could be soure of issue - look at model naming
-                model_filename = os.path.join(task_output_uri, f"{self.combined_params['model_name_paired']}_{task.id}.keras")
             self.train_and_evaluate(model, train_ds, val_ds, test_ds, callbacks, task)
             model.save(model_filename)
             output_model.update_weights(weights_filename=model_filename)
