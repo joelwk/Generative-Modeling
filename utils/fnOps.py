@@ -1,26 +1,27 @@
+from datetime import datetime
+import os
+import pandas as pd
+
 from clearml import Task, Dataset as ClearMLDataset, Model as ClearMLModel, Logger, OutputModel, InputModel
-from tensorflow.keras.models import load_model as tf_load_model
+
 from utils.fnProcessing import read_config
-from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping
 from generative_text.general_tnn.train import train_model, CustomSchedule, TrainTextGenerator
 from generative_text.general_tnn.process import main
 from generative_text.general_tnn.tnn import TransformerBlock, TokenAndPositionEmbedding
 from generative_text.general_tnn.evaluate import TextGenerator
 
+from utils.fnCloud.S3Handler import S3Handler
 from generative_text.paired_tnn.process import process_paired_data
 from generative_text.paired_tnn.train import prepare_model_training, PairedTNNTextGenerator
-from datetime import datetime
-import os
-import pandas as pd
+
+from tensorflow.keras.models import load_model as tf_load_model
+from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping
+from tensorflow.python.framework import ops
+import tensorflow_io
 
 config_path='./utils/fnCloud/config-cloud.ini'
 config_params = read_config(section='aws_credentials',config_path=config_path)
-aws_access_key_id = config_params['aws_access_key_id']
-aws_secret_access_key = config_params['aws_secret_access_key']
-
-os.environ['AWS_ACCESS_KEY_ID'] = aws_access_key_id
-os.environ['AWS_SECRET_ACCESS_KEY'] = aws_secret_access_key
-os.environ['AWS_DEFAULT_REGION'] = 'us-east-1'
+config_s3_info = read_config(section='s3_information',config_path=config_path)
 
 class ClearMLOps:
     def __init__(self, config_path='./generative_text/config.ini'):
@@ -35,6 +36,9 @@ class ClearMLOps:
         files_host = os.getenv('CLEARML_FILES_HOST', self.clearml_params.get('files_host'))
         key = os.getenv('CLEARML_KEY', self.clearml_params.get('key'))
         secret = os.getenv('CLEARML_SECRET', self.clearml_params.get('secret'))
+        os.environ['AWS_ACCESS_KEY_ID'] = config_params['aws_access_key_id']
+        os.environ['AWS_SECRET_ACCESS_KEY'] = config_params['aws_secret_access_key']
+        os.environ['AWS_DEFAULT_REGION'] = 'us-east-1'
         if not all([api_host, web_host, files_host, key, secret]):
             raise ValueError("Missing necessary ClearML credentials. Please set them in environment variables or config file.")
         Task.set_credentials(api_host=api_host, web_host=web_host, files_host=files_host, key=key, secret=secret)
@@ -143,34 +147,40 @@ class ClearMLOps:
                     print(f"Failed to delete dataset with ID: {dataset_id}. Reason: {e}")
 
 class ClearMLOpsTraining(ClearMLOps):
-    def __init__(self, clearml_params, config_params, config_path='./generative_text/config.ini'):
+    def __init__(self, clearml_params, config_params, config_aws, config_path='./generative_text/config.ini'):
         super().__init__(config_path)
         self.clearml_params = clearml_params
         self.config_params = config_params
+        self.config_aws = config_aws
         self.combined_params = {**self.config_params, **self.clearml_params}
-       
-    def get_callbacks_general(self, task_output_uri, combined_vocab, tokenizer,):
-        return [
-            ModelCheckpoint(filepath=os.path.join(task_output_uri, 'best_model.keras'), monitor='val_loss', mode='min', save_best_only=True, verbose=1),
-            TrainTextGenerator(index_to_word=combined_vocab, tokenizer=tokenizer),
-            EarlyStopping(monitor='loss', patience=15, restore_best_weights=True)]
+        self.configure_aws_credentials()
+        self.s3_handler = S3Handler(self.config_aws, config_s3_info)
 
-    def get_callbacks_paired(self, task_output_uri, tokenizer,):
+    def configure_aws_credentials(self):
+        os.environ['AWS_ACCESS_KEY_ID'] = self.config_aws['aws_access_key_id']
+        os.environ['AWS_SECRET_ACCESS_KEY'] = self.config_aws['aws_secret_access_key']
+        os.environ['AWS_DEFAULT_REGION'] = 'us-east-1'
+        
+    def get_callbacks_general(self, task_output_uri, combined_vocab, tokenizer):
+        best_model_path = os.path.join(task_output_uri, 'best_model.keras')
         return [
-            ModelCheckpoint(filepath=os.path.join(task_output_uri, 'best_model.keras'), monitor='val_loss', mode='min', save_best_only=True, verbose=1),
+            ModelCheckpoint(filepath=best_model_path, monitor='val_loss', mode='min', save_best_only=True, verbose=1),
+            TrainTextGenerator(index_to_word=combined_vocab, tokenizer=tokenizer),
+            EarlyStopping(monitor='loss', patience=15, restore_best_weights=False)]
+
+    def get_callbacks_paired(self, task_output_uri, tokenizer):
+        best_model_path = os.path.join(task_output_uri, 'best_model.keras')
+        return [
+            ModelCheckpoint(filepath=best_model_path, monitor='val_loss', mode='min', save_best_only=True, verbose=1),
             PairedTNNTextGenerator(tokenizer=tokenizer),
-            EarlyStopping(monitor='loss', patience=15, restore_best_weights=True)]
+            EarlyStopping(monitor='loss', patience=15, restore_best_weights=False)]
 
     def train_and_evaluate(self, model, train_ds, val_ds, test_ds, callbacks, task):
         logger = task.get_logger()
-
-        # Train model
-        history = model.fit(
-            train_ds,
-            epochs=int(self.combined_params['epochs']),
-            validation_data=val_ds,
-            callbacks=callbacks)
-
+        task_output_uri = self.clearml_params['clearml_output_uri']
+        best_model_path = os.path.join(task_output_uri, 'best_model.keras')
+        history = model.fit(train_ds, epochs=int(self.combined_params['epochs']), validation_data=val_ds, callbacks=callbacks)
+        
         # Log training history
         for epoch in range(len(history.epoch)):
             for metric, values in history.history.items():
@@ -188,6 +198,11 @@ class ClearMLOpsTraining(ClearMLOps):
         for epoch in range(len(history.epoch)):
             for metric_name, value in zip(model.metrics_names, test_metrics):
                 logger.report_scalar(title=metric_name, series="test", value=value, iteration=epoch)
+        print(f"Best model saved at {best_model_path}")
+        # Upload the best model to S3
+        s3_model_key = f"models/{task.id}/{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}_best_model.keras"
+        self.s3_handler._upload_file(best_model_path, s3_model_key)
+        print(f"Best model uploaded to S3 at {s3_model_key}")
         logger.flush()
 
     def run_clearml_training_task(self, task_name, dataset_type='general', dataset_id=None, load_model='new', model_id=None):
@@ -196,8 +211,9 @@ class ClearMLOpsTraining(ClearMLOps):
         task.connect(self.combined_params)
         if task:
             combined_dataset = self.load_dataset(dataset_id)
+            
+            ## General data
             if dataset_type == 'general':
-                ## General data
                 if dataset_id:
                     train_ds, val_ds, test_ds, combined_vocab, tokenizer = main(combined_dataset, input_col='text', clean_col='text')
                 else:
@@ -215,9 +231,9 @@ class ClearMLOpsTraining(ClearMLOps):
                     model = train_model(preload_model=False)
                 callbacks = self.get_callbacks_general(output_uri, combined_vocab, tokenizer)
                 model_filename = os.path.join(output_uri, f"{self.combined_params['model_name_general']}_{task.id}.keras")
-                                
+                
+            ## Paired data             
             if dataset_type == 'paired':
-                ## Paired data
                 custom_objects = {
                     'TransformerBlock': TransformerBlock,
                     'CustomSchedule': CustomSchedule}
@@ -230,8 +246,6 @@ class ClearMLOpsTraining(ClearMLOps):
                     model,train_ds, val_ds, test_ds, vocab, tokenizer = prepare_model_training(combined_dataset, preload_model=False)
                 callbacks = self.get_callbacks_paired(output_uri, tokenizer)
                 model_filename = os.path.join(output_uri, f"{self.combined_params['model_name_paired']}_{task.id}.keras")
-                # Could be soure of issue - look at model naming
             self.train_and_evaluate(model, train_ds, val_ds, test_ds, callbacks, task)
-            model.save(model_filename)
             output_model.update_weights(weights_filename=model_filename)
             task.close()
