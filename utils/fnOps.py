@@ -161,24 +161,28 @@ class ClearMLOpsTraining(ClearMLOps):
         os.environ['AWS_SECRET_ACCESS_KEY'] = self.config_aws['aws_secret_access_key']
         os.environ['AWS_DEFAULT_REGION'] = 'us-east-1'
         
-    def get_callbacks_general(self, task_output_uri, combined_vocab, tokenizer):
-        best_model_path = os.path.join(task_output_uri, 'best_model.keras')
-        return [
-            ModelCheckpoint(filepath=best_model_path, monitor='val_loss', mode='min', save_best_only=True, verbose=1),
-            TrainTextGenerator(index_to_word=combined_vocab, tokenizer=tokenizer),
-            EarlyStopping(monitor='loss', patience=15, restore_best_weights=False)]
+    def get_callbacks(self, dataset_type, task_output_uri, tokenizer, index_to_word=None):
+        timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+        best_model_filename = f'best_model_{dataset_type}_{timestamp}.keras'
+        best_model_path = os.path.join(task_output_uri, best_model_filename)
 
-    def get_callbacks_paired(self, task_output_uri, tokenizer):
-        best_model_path = os.path.join(task_output_uri, 'best_model.keras')
-        return [
+        callbacks = [
             ModelCheckpoint(filepath=best_model_path, monitor='val_loss', mode='min', save_best_only=True, verbose=1),
-            PairedTNNTextGenerator(tokenizer=tokenizer),
-            EarlyStopping(monitor='loss', patience=15, restore_best_weights=False)]
+            EarlyStopping(monitor='loss', patience=15, restore_best_weights=True)
+        ]
+        if dataset_type == 'general' and index_to_word:
+            callbacks.append(TrainTextGenerator(index_to_word=index_to_word, tokenizer=tokenizer))
+        elif dataset_type == 'paired':
+            callbacks.append(PairedTNNTextGenerator(tokenizer=tokenizer))
 
-    def train_and_evaluate(self, model, train_ds, val_ds, test_ds, callbacks, task):
+        return callbacks
+
+    def train_and_evaluate(self, model, train_ds, val_ds, test_ds, callbacks, s3_model_key, task):
         logger = task.get_logger()
-        task_output_uri = self.clearml_params['clearml_output_uri']
-        best_model_path = os.path.join(task_output_uri, 'best_model.keras')
+        local_model_dir = os.path.join('models', str(task.id))
+        os.makedirs(local_model_dir, exist_ok=True)
+        best_model_filename = 'best_model.keras'
+        best_model_path = os.path.join(local_model_dir, best_model_filename)
         history = model.fit(train_ds, epochs=int(self.combined_params['epochs']), validation_data=val_ds, callbacks=callbacks)
         
         # Log training history
@@ -198,11 +202,12 @@ class ClearMLOpsTraining(ClearMLOps):
         for epoch in range(len(history.epoch)):
             for metric_name, value in zip(model.metrics_names, test_metrics):
                 logger.report_scalar(title=metric_name, series="test", value=value, iteration=epoch)
-        print(f"Best model saved at {best_model_path}")
-        # Upload the best model to S3
-        s3_model_key = f"models/{task.id}/{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}_best_model.keras"
-        self.s3_handler._upload_file(best_model_path, s3_model_key)
-        print(f"Best model uploaded to S3 at {s3_model_key}")
+        if os.path.exists(best_model_path):
+            print(f"Best model saved at {best_model_path}")
+            self.s3_handler._upload_file(best_model_path, s3_model_key)
+            print(f"Best model uploaded to S3 at s3://{self.clearml_params['clearml_output_uri']}/{s3_model_key}")
+        else:
+            print(f"Best model file not found at {best_model_path}, check your saving callbacks.")
         logger.flush()
 
     def run_clearml_training_task(self, task_name, dataset_type='general', dataset_id=None, load_model='new', model_id=None):
@@ -229,8 +234,7 @@ class ClearMLOpsTraining(ClearMLOps):
                     model = train_model(preload_model=True, model_path=local_model_path)
                 elif load_model == 'new':
                     model = train_model(preload_model=False)
-                callbacks = self.get_callbacks_general(output_uri, combined_vocab, tokenizer)
-                model_filename = os.path.join(output_uri, f"{self.combined_params['model_name_general']}_{task.id}.keras")
+                callbacks = self.get_callbacks(dataset_type, output_uri, tokenizer, index_to_word=combined_vocab)
                 
             ## Paired data             
             if dataset_type == 'paired':
@@ -244,8 +248,9 @@ class ClearMLOpsTraining(ClearMLOps):
                     model,train_ds, val_ds, test_ds, vocab, tokenizer = prepare_model_training(combined_dataset, preload_model=True, model_path=local_model_path)
                 elif load_model == 'new':
                     model,train_ds, val_ds, test_ds, vocab, tokenizer = prepare_model_training(combined_dataset, preload_model=False)
-                callbacks = self.get_callbacks_paired(output_uri, tokenizer)
-                model_filename = os.path.join(output_uri, f"{self.combined_params['model_name_paired']}_{task.id}.keras")
-            self.train_and_evaluate(model, train_ds, val_ds, test_ds, callbacks, task)
-            output_model.update_weights(weights_filename=model_filename)
+                callbacks = self.get_callbacks(dataset_type, output_uri, tokenizer)
+                
+            s3_model_key = os.path.join(task.id, f"{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}_best_model.keras")
+            self.train_and_evaluate(model, train_ds, val_ds, test_ds, callbacks, s3_model_key , task)
+            output_model.update_weights(weights_filename=os.path.join(self.clearml_params['clearml_output_uri'], 'models', s3_model_key))
             task.close()
