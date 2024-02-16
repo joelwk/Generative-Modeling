@@ -2,7 +2,7 @@ from datetime import datetime
 import os
 import pandas as pd
 
-from clearml import Task, Dataset as ClearMLDataset, Model as ClearMLModel, Logger, OutputModel, InputModel
+from clearml import Task, Dataset as ClearMLDataset, Model as ClearMLModel, Logger, OutputModel, InputModel, StorageManager
 
 from utils.fnProcessing import read_config
 from generative_text.general_tnn.train import train_model, CustomSchedule, TrainTextGenerator
@@ -120,14 +120,6 @@ class ClearMLOps:
         print(f"Models in project {project_name}:")
         for model in models:
             print(f"Model ID: {model.id}, Name: {model.name}")
-            
-    def load_model(self, model_id): 
-        model = ClearMLModel(model_id=model_id)
-        print(f"Model ID: {model.id}")
-        print(f"Name: {model.name}")
-        print(f"URL: {model.url}")
-        local_weights_path = model.get_weights()
-        print(f"Weights downloaded to: {local_weights_path}")
 
     def remove_clearml_datasets(self, dataset_ids=None):
         if dataset_ids is None:
@@ -145,7 +137,22 @@ class ClearMLOps:
                     ds.delete(dataset_id = ds.id)
                 except Exception as e:
                     print(f"Failed to delete dataset with ID: {dataset_id}. Reason: {e}")
-
+                    
+    def get_custom_objects(self):
+        return {
+            'CustomSchedule': CustomSchedule,
+            'TransformerBlock': TransformerBlock,
+            'TokenAndPositionEmbedding': TokenAndPositionEmbedding}
+                  
+    def load_model(self, model_id=None, load_model='new', dataset_type='general'):
+        input_model = ClearMLModel(model_id=model_id)
+        local_model_path = input_model.get_local_copy()
+        print(f"Model downloaded to: {local_model_path}")
+        if local_model_path.startswith('s3://'):
+            local_model_path = self.s3_handler.download_file(local_model_path)
+        model = tf_load_model(local_model_path, custom_objects=self.get_custom_objects())
+        return model
+    
 class ClearMLOpsTraining(ClearMLOps):
     def __init__(self, clearml_params, config_params, config_aws, config_path='./generative_text/config.ini'):
         super().__init__(config_path)
@@ -165,7 +172,6 @@ class ClearMLOpsTraining(ClearMLOps):
         timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
         best_model_filename = f'best_model_{dataset_type}_{timestamp}.keras'
         best_model_path = os.path.join(task_output_uri, best_model_filename)
-
         callbacks = [
             ModelCheckpoint(filepath=best_model_path, monitor='val_loss', mode='min', save_best_only=True, verbose=1),
             EarlyStopping(monitor='loss', patience=15, restore_best_weights=True)
@@ -174,83 +180,68 @@ class ClearMLOpsTraining(ClearMLOps):
             callbacks.append(TrainTextGenerator(index_to_word=index_to_word, tokenizer=tokenizer))
         elif dataset_type == 'paired':
             callbacks.append(PairedTNNTextGenerator(tokenizer=tokenizer))
+        return callbacks, best_model_path
 
-        return callbacks
-
-    def train_and_evaluate(self, model, train_ds, val_ds, test_ds, callbacks, s3_model_key, task):
+    def train_and_evaluate(self, model, epochs, train_ds, val_ds, test_ds, callbacks, s3_model_key, task, best_model_path):
+        output_model = OutputModel(task=task, framework='Keras')
         logger = task.get_logger()
-        local_model_dir = os.path.join('models', str(task.id))
-        os.makedirs(local_model_dir, exist_ok=True)
-        best_model_filename = 'best_model.keras'
-        best_model_path = os.path.join(local_model_dir, best_model_filename)
-        history = model.fit(train_ds, epochs=int(self.combined_params['epochs']), validation_data=val_ds, callbacks=callbacks)
-        
-        # Log training history
+        history = model.fit(train_ds, epochs=epochs, validation_data=val_ds, callbacks=callbacks)
         for epoch in range(len(history.epoch)):
             for metric, values in history.history.items():
                 value = values[epoch]
-                stage = 'train_loss' if 'val' not in metric else 'val_loss'
+                stage = 'train_loss' if 'val_' not in metric else 'val_loss'
                 metric_name = metric.replace('val_', '')
-                logger.report_scalar(title=metric_name, series=stage, value=value, iteration=epoch)
-
-        # Evaluate on test set
+                logger.report_scalar(title=metric_name, series=stage, value=value, iteration=epoch)  
         test_metrics = model.evaluate(test_ds)
         if isinstance(test_metrics, float):
             test_metrics = [test_metrics]
         for metric_name, value in zip(model.metrics_names, test_metrics):
             print(f"{metric_name}: {value}")
-        for epoch in range(len(history.epoch)):
-            for metric_name, value in zip(model.metrics_names, test_metrics):
-                logger.report_scalar(title=metric_name, series="test", value=value, iteration=epoch)
-        if os.path.exists(best_model_path):
-            print(f"Best model saved at {best_model_path}")
-            self.s3_handler._upload_file(best_model_path, s3_model_key)
-            print(f"Best model uploaded to S3 at s3://{self.clearml_params['clearml_output_uri']}/{s3_model_key}")
-        else:
-            print(f"Best model file not found at {best_model_path}, check your saving callbacks.")
+            logger.report_scalar(title=metric_name, series="test", value=value, iteration=len(history.epoch))
+        # Derive local directory path from the S3 path
+        local_model_path = best_model_path.replace('s3://experiment-research/clearml/', './')
+        local_model_dir = os.path.dirname(local_model_path)
+        if not os.path.exists(local_model_dir):
+            os.makedirs(local_model_dir)
+        model.save(local_model_path)
+        StorageManager.upload_file(local_file=local_model_path, remote_url=best_model_path)
+        task.upload_artifact(name="best_model", artifact_object=best_model_path)
+        os.remove(local_model_path)
         logger.flush()
 
     def run_clearml_training_task(self, task_name, dataset_type='general', dataset_id=None, load_model='new', model_id=None):
-        output_uri = self.clearml_params['clearml_output_uri']
+        task_output_uri = self.clearml_params['clearml_output_uri']
+        output_uri = task_output_uri
+
         task = Task.init(project_name=self.combined_params['clearml_project_name'], task_name=task_name, auto_connect_frameworks={'tensorboard': True}, output_uri=output_uri, task_type=Task.TaskTypes.training)
         task.connect(self.combined_params)
         if task:
             combined_dataset = self.load_dataset(dataset_id)
-            
             ## General data
             if dataset_type == 'general':
-                if dataset_id:
-                    train_ds, val_ds, test_ds, combined_vocab, tokenizer = main(combined_dataset, input_col='text', clean_col='text')
-                else:
-                    train_ds, val_ds, test_ds = self.get_latest_datasets(self.combined_params['clearml_project_name'])['id']
+                train_ds, val_ds, test_ds, combined_vocab, tokenizer = main(combined_dataset, input_col='text', clean_col='text')
                 custom_objects = {
                     'TokenAndPositionEmbedding': TokenAndPositionEmbedding,
                     'TransformerBlock': TransformerBlock,
                     'CustomSchedule': CustomSchedule}
-                output_model = OutputModel(task=task, framework='Keras')
                 if load_model == 'train':
                     input_model = InputModel(model_id=model_id)
                     local_model_path = input_model.get_local_copy(force_download=False)
                     model = train_model(preload_model=True, model_path=local_model_path)
                 elif load_model == 'new':
                     model = train_model(preload_model=False)
-                callbacks = self.get_callbacks(dataset_type, output_uri, tokenizer, index_to_word=combined_vocab)
-                
             ## Paired data             
             if dataset_type == 'paired':
                 custom_objects = {
                     'TransformerBlock': TransformerBlock,
                     'CustomSchedule': CustomSchedule}
-                output_model = OutputModel(task=task, framework='Keras')
                 if load_model == 'train':
                     input_model = InputModel(model_id=model_id)
                     local_model_path = input_model.get_local_copy(force_download=False)
-                    model,train_ds, val_ds, test_ds, vocab, tokenizer = prepare_model_training(combined_dataset, preload_model=True, model_path=local_model_path)
+                    model, train_ds, val_ds, test_ds, vocab, tokenizer = prepare_model_training(combined_dataset, preload_model=True, model_path=local_model_path)
                 elif load_model == 'new':
-                    model,train_ds, val_ds, test_ds, vocab, tokenizer = prepare_model_training(combined_dataset, preload_model=False)
-                callbacks = self.get_callbacks(dataset_type, output_uri, tokenizer)
-                
-            s3_model_key = os.path.join(task.id, f"{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}_best_model.keras")
-            self.train_and_evaluate(model, train_ds, val_ds, test_ds, callbacks, s3_model_key , task)
-            output_model.update_weights(weights_filename=os.path.join(self.clearml_params['clearml_output_uri'], 'models', s3_model_key))
-            task.close()
+                    model, train_ds, val_ds, test_ds, vocab, tokenizer = prepare_model_training(combined_dataset, preload_model=False)
+        callbacks, best_model_path = self.get_callbacks(dataset_type, task_output_uri, tokenizer, index_to_word=combined_vocab if dataset_type == 'general' else None)
+        s3_model_key = os.path.join(task.id, best_model_path)
+        self.train_and_evaluate(model, int(self.combined_params['epochs']), train_ds, val_ds, test_ds, callbacks, s3_model_key, task, best_model_path)
+        task.close()
